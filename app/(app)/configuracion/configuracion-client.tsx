@@ -7,14 +7,18 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { toast } from "sonner";
 import { exportarBackup } from "@/lib/actions/backup-actions";
 import { cerrarSesion } from "@/app/login/actions";
+import { AvisosSeccion } from "./avisos-seccion";
+import type { EstadoAvisos } from "@/lib/actions/avisos-actions";
 
 interface Props {
   totales: { productos: number; categorias: number; movimientos: number; inactivos: number };
   estructura: { ok: boolean; faltantes: string[] };
   servidor: { host: string; base: string; version: string };
+  /** Null mientras falte la migración: sin tablas no hay nada que avisar. */
+  avisos: EstadoAvisos | null;
 }
 
-export function ConfiguracionClient({ totales, estructura, servidor }: Props) {
+export function ConfiguracionClient({ totales, estructura, servidor, avisos }: Props) {
   const [exportando, setExportando] = useState(false);
 
   async function handleBackup() {
@@ -50,7 +54,7 @@ export function ConfiguracionClient({ totales, estructura, servidor }: Props) {
     <div className="mx-auto max-w-3xl space-y-6">
       <div className="space-y-1">
         <h1 className="text-[22px] font-semibold tracking-tight">Configuración</h1>
-        <p className="text-caption text-muted-foreground">Estado de la base, backups y sesión</p>
+        <p className="text-caption text-muted-foreground">Avisos, estado de la base, backups y sesión</p>
       </div>
 
       <Card className={estructura.ok ? undefined : "border-destructive/40"}>
@@ -107,6 +111,8 @@ export function ConfiguracionClient({ totales, estructura, servidor }: Props) {
           </div>
         </CardContent>
       </Card>
+
+      {avisos && <AvisosSeccion estado={avisos} />}
 
       <Card>
         <CardHeader>
