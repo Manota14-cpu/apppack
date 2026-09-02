@@ -2,6 +2,7 @@ import { Suspense } from "react";
 import { requerirSesion } from "@/lib/guard";
 import { consultar } from "@/lib/db";
 import { CAMPOS_PRODUCTO, DESDE_PRODUCTOS, paraBusqueda } from "@/lib/sql";
+import { leerCaracteristicas } from "@/lib/validation";
 import { ProductosClient } from "./productos-client";
 import ProductosLoading from "./loading";
 import type { Categoria, ProductoConCategoria } from "@/types/database.types";
@@ -46,7 +47,7 @@ async function getProductos(params: Params) {
 
   // Se cuenta primero para acotar la página: pedir ?page=999 dejaba una
   // pantalla vacía y sin navegación para volver.
-  const [conteo, categorias] = await Promise.all([
+  const [conteo, categorias, unidades, faltantes] = await Promise.all([
     consultar<{ total: number }>(
       `select count(*)::int as total ${DESDE_PRODUCTOS} where ${where}`,
       valores
@@ -55,12 +56,24 @@ async function getProductos(params: Params) {
       `select id, name as nombre, null::text as color, null::timestamptz as created_at
          from "Category" order by name`
     ),
+    // La unidad es texto libre ("x50u", "combo"): se ofrecen como sugerencia
+    // las que el catálogo ya usa, en vez de una lista cerrada que las rechace.
+    consultar<{ unidad: string }>(
+      `select distinct unit as unidad from "Product" where coalesce(unit,'') <> '' order by unit`
+    ),
+    // Lo que falta cargar en TODO el catálogo, no solo en la página que se ve:
+    // el aviso tiene que decir cuánto falta de verdad.
+    consultar<{ sin_sku: number; sin_costo: number }>(
+      `select count(*) filter (where coalesce(sku, '') = '')::int      as sin_sku,
+              count(*) filter (where coalesce("costPrice", 0) = 0)::int as sin_costo
+         from "Product" where active`
+    ),
   ]);
 
   const total = conteo[0]?.total ?? 0;
   const pagina = Math.min(paginaPedida, Math.max(1, Math.ceil(total / PAGE_SIZE)));
 
-  const productos = await consultar<ProductoConCategoria>(
+  const filas = await consultar<ProductoConCategoria>(
     `select ${CAMPOS_PRODUCTO} ${DESDE_PRODUCTOS}
       where ${where}
       order by p.name
@@ -68,12 +81,22 @@ async function getProductos(params: Params) {
     valores
   );
 
+  // `features` es una columna de texto que guarda JSON: se normaliza acá para
+  // que el formulario reciba un array de verdad y no tenga que adivinar.
+  const productos = filas.map((f) => ({
+    ...f,
+    caracteristicas: leerCaracteristicas(f.caracteristicas),
+  }));
+
   return {
     productos,
     categorias,
     total,
     pagina,
     pageSize: PAGE_SIZE,
+    unidadesEnUso: unidades.map((u) => u.unidad),
+    sinSku: faltantes[0]?.sin_sku ?? 0,
+    sinCosto: faltantes[0]?.sin_costo ?? 0,
     filtros: {
       q: params.q ?? "",
       categoria: params.categoria ?? "todas",

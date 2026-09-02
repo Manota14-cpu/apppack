@@ -61,8 +61,21 @@ describe("productoSchema", () => {
     expect(r.data.categoria_id).toBeNull();
   });
 
-  it("rechaza una unidad de medida inventada", () => {
-    expect(productoSchema.safeParse(form({ nombre: "X", unidad_medida: "toneladas" })).success).toBe(false);
+  it("acepta las unidades de envase que usa el catálogo", () => {
+    // Este test decía lo contrario: exigía que la unidad fuera de una lista
+    // cerrada. Contra la base real resultó que 28 de los 30 productos usan
+    // formas como "x50u" o "combo", así que el enum habría rechazado casi
+    // todo el catálogo. Además la tienda lee esta cadena para decidir qué es
+    // un pack mayorista, con lo cual normalizarla cambiaría lo que se ve.
+    for (const unidad of ["x50u", "combo", "x100u", "x1u", "unidad"]) {
+      const r = productoSchema.safeParse(form({ nombre: "X", unidad_medida: unidad }));
+      expect(r.success && r.data.unidad_medida).toBe(unidad);
+    }
+  });
+
+  it("una unidad vacía cae en «unidad» en vez de quedar en blanco", () => {
+    const r = productoSchema.safeParse(form({ nombre: "X", unidad_medida: "  " }));
+    expect(r.success && r.data.unidad_medida).toBe("unidad");
   });
 
   it("recorta los espacios sobrantes del nombre", () => {

@@ -6,6 +6,8 @@ import { motion } from "framer-motion";
 import {
   LayoutDashboard,
   Package,
+  ClipboardList,
+  ClipboardCheck,
   History,
   Settings,
 } from "lucide-react";
@@ -14,6 +16,8 @@ import { cn } from "@/lib/utils";
 const navegacion = [
   { nombre: "Dashboard", href: "/dashboard", icono: LayoutDashboard },
   { nombre: "Productos", href: "/productos", icono: Package },
+  { nombre: "Pedidos", href: "/pedidos", icono: ClipboardList },
+  { nombre: "Recuentos", href: "/recuentos", icono: ClipboardCheck },
   { nombre: "Movimientos", href: "/movimientos", icono: History },
 ];
 

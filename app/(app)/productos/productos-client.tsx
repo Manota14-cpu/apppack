@@ -1,23 +1,29 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState, useTransition } from "react";
 import { useRouter, usePathname, useSearchParams } from "next/navigation";
 import {
   ArrowDownCircle,
   ArrowUpCircle,
   Download,
   FolderCog,
+  Image as ImageIcon,
   Package,
   Pencil,
   Plus,
   RotateCcw,
+  ScanLine,
   Search,
+  Star,
+  Tag,
+  TrendingUp,
   Trash2,
   Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
@@ -27,7 +33,6 @@ import { Textarea } from "@/components/ui/textarea";
 import { PaginationLinks } from "@/components/ui/pagination";
 import { toast } from "sonner";
 import { useDebounce } from "@/lib/use-debounce";
-import { UNIDADES } from "@/lib/validation";
 import type { Categoria, ProductoConCategoria } from "@/types/database.types";
 import {
   actualizarProducto,
@@ -38,6 +43,18 @@ import {
 } from "@/lib/actions/productos-actions";
 import { CategoriasDialog } from "./categorias-dialog";
 import { ImportarDialog } from "./importar-dialog";
+import { CamposProducto } from "./campos-producto";
+import {
+  AvisoDatosFaltantes,
+  BarraSeleccion,
+  CasillaFila,
+  EtiquetasMasivasDialog,
+  PreciosMasivosDialog,
+} from "./acciones-masivas";
+import { CostosDialog, SkusDialog } from "./dialogos-datos";
+import { ImagenesDialog } from "./imagenes-dialog";
+import { HistorialPreciosDialog } from "./historial-precios-dialog";
+import { EscanerDialog } from "./escaner-dialog";
 import { descargarCatalogo } from "@/lib/excel-cliente";
 
 const money = (n: number) => `$${Number(n).toLocaleString("es-AR", { maximumFractionDigits: 0 })}`;
@@ -50,16 +67,50 @@ function nivelStock(p: ProductoConCategoria): { variante: "default" | "warning" 
   return { variante: "default", texto: "En stock" };
 }
 
+/** Carteles comerciales que la tienda muestra, para verlos de un vistazo. */
+function Carteles({ p }: { p: ProductoConCategoria }) {
+  const marcas: { texto: string; icono: typeof Star }[] = [];
+  if (p.descuento) marcas.push({ texto: `-${p.descuento}%`, icono: Tag });
+  if (p.destacado) marcas.push({ texto: "Portada", icono: Star });
+  if (p.mas_vendido) marcas.push({ texto: "Más vendido", icono: TrendingUp });
+  if (marcas.length === 0) return null;
+
+  return (
+    <span className="mt-1 flex flex-wrap gap-1">
+      {marcas.map((m) => (
+        <Badge key={m.texto} variant="outline">
+          <m.icono className="h-2.5 w-2.5" aria-hidden="true" />
+          {m.texto}
+        </Badge>
+      ))}
+      {p.es_nuevo && <Badge variant="outline">Nuevo</Badge>}
+    </span>
+  );
+}
+
 interface Props {
   productos: ProductoConCategoria[];
   categorias: Categoria[];
   total: number;
   pagina: number;
   pageSize: number;
+  unidadesEnUso: string[];
+  sinSku: number;
+  sinCosto: number;
   filtros: { q: string; categoria: string; stock: string; estado: string };
 }
 
-export function ProductosClient({ productos, categorias, total, pagina, pageSize, filtros }: Props) {
+export function ProductosClient({
+  productos,
+  categorias,
+  total,
+  pagina,
+  pageSize,
+  unidadesEnUso,
+  sinSku,
+  sinCosto,
+  filtros,
+}: Props) {
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -96,6 +147,28 @@ export function ProductosClient({ productos, categorias, total, pagina, pageSize
     if (busquedaDebounced !== filtros.q) actualizarUrl({ q: busquedaDebounced || null });
   }, [busquedaDebounced, filtros.q, actualizarUrl]);
 
+  // ── Selección múltiple ─────────────────────────────────────────────
+  const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
+
+  // Lo seleccionado se cruza con lo que está a la vista en vez de vaciarse al
+  // cambiar de página. Así una acción masiva no puede alcanzar productos que
+  // el usuario ya no tiene delante, y no hace falta un efecto que limpie.
+  const idsSeleccionados = useMemo(
+    () => productos.filter((p) => seleccion.has(p.id)).map((p) => p.id),
+    [productos, seleccion]
+  );
+
+  function alternar(id: string, marcado: boolean) {
+    setSeleccion((prev) => {
+      const siguiente = new Set(prev);
+      if (marcado) siguiente.add(id);
+      else siguiente.delete(id);
+      return siguiente;
+    });
+  }
+
+  const todosMarcados = productos.length > 0 && productos.every((p) => seleccion.has(p.id));
+
   // ── Diálogos ───────────────────────────────────────────────────────
   const [crearAbierto, setCrearAbierto] = useState(false);
   const [editando, setEditando] = useState<ProductoConCategoria | null>(null);
@@ -103,11 +176,25 @@ export function ProductosClient({ productos, categorias, total, pagina, pageSize
   const [aEliminar, setAEliminar] = useState<ProductoConCategoria | null>(null);
   const [categoriasAbierto, setCategoriasAbierto] = useState(false);
   const [importarAbierto, setImportarAbierto] = useState(false);
+  const [preciosAbierto, setPreciosAbierto] = useState(false);
+  const [etiquetasAbierto, setEtiquetasAbierto] = useState(false);
+  const [costosAbierto, setCostosAbierto] = useState(false);
+  const [skusAbierto, setSkusAbierto] = useState(false);
+  const [escanerAbierto, setEscanerAbierto] = useState(false);
+  const [verImagenesDe, setVerImagenesDe] = useState<ProductoConCategoria | null>(null);
+  const [verHistorialDe, setVerHistorialDe] = useState<ProductoConCategoria | null>(null);
   const [enviando, setEnviando] = useState(false);
 
   const viendoEliminados = filtros.estado === "eliminados";
 
-  const refrescar = () => startTransition(() => router.refresh());
+  const refrescar = useCallback(() => {
+    startTransition(() => router.refresh());
+  }, [router]);
+
+  function trasAccionMasiva() {
+    setSeleccion(new Set());
+    refrescar();
+  }
 
   // ── Acciones ───────────────────────────────────────────────────────
   async function handleCrear(e: React.FormEvent<HTMLFormElement>) {
@@ -152,10 +239,9 @@ export function ProductosClient({ productos, categorias, total, pagina, pageSize
     try {
       const r = await ajustarStock(ajustando.producto.id, cantidad * ajustando.signo, motivo || "Sin motivo");
       if (!r.success) return void toast.error(r.error);
-      toast.success(
-        `${ajustando.signo === 1 ? "Entrada" : "Salida"} registrada`,
-        { description: `${ajustando.producto.nombre} — stock ahora: ${cant(r.stockResultante)}` }
-      );
+      toast.success(`${ajustando.signo === 1 ? "Entrada" : "Salida"} registrada`, {
+        description: `${ajustando.producto.nombre} — stock ahora: ${cant(r.stockResultante)}`,
+      });
       setAjustando(null);
       refrescar();
     } finally {
@@ -205,6 +291,10 @@ export function ProductosClient({ productos, categorias, total, pagina, pageSize
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
+          <Button variant="outline" size="sm" onClick={() => setEscanerAbierto(true)}>
+            <ScanLine className="h-4 w-4" />
+            <span className="hidden sm:inline">Escanear</span>
+          </Button>
           <Button variant="outline" size="sm" onClick={() => setCategoriasAbierto(true)}>
             <FolderCog className="h-4 w-4" />
             <span className="hidden sm:inline">Categorías</span>
@@ -223,6 +313,15 @@ export function ProductosClient({ productos, categorias, total, pagina, pageSize
           </Button>
         </div>
       </div>
+
+      {!viendoEliminados && (
+        <AvisoDatosFaltantes
+          sinSku={sinSku}
+          sinCosto={sinCosto}
+          onSkus={() => setSkusAbierto(true)}
+          onCostos={() => setCostosAbierto(true)}
+        />
+      )}
 
       {/* ── Filtros ── */}
       <div className="flex flex-wrap items-center gap-3">
@@ -294,11 +393,24 @@ export function ProductosClient({ productos, categorias, total, pagina, pageSize
               return (
                 <li key={p.id} className="rounded-xl border border-border bg-card p-4">
                   <div className="flex items-start justify-between gap-3">
-                    <div className="min-w-0 flex-1">
-                      <p className="font-medium leading-snug">{p.nombre}</p>
-                      <p className="text-caption text-muted-foreground mt-0.5">
-                        {p.sku ?? "Sin SKU"} · {p.categorias?.nombre ?? "Sin categoría"}
-                      </p>
+                    <div className="flex min-w-0 flex-1 items-start gap-2.5">
+                      {!viendoEliminados && (
+                        <span className="pt-1">
+                          <CasillaFila
+                            marcada={seleccion.has(p.id)}
+                            onCambio={(m) => alternar(p.id, m)}
+                            nombre={p.nombre}
+                          />
+                        </span>
+                      )}
+                      <div className="min-w-0">
+                        <p className="font-medium leading-snug">{p.nombre}</p>
+                        <p className="text-caption text-muted-foreground mt-0.5">
+                          {p.sku ?? "Sin SKU"} · {p.categorias?.nombre ?? "Sin categoría"}
+                          {p.imagenes === 0 && " · sin foto"}
+                        </p>
+                        <Carteles p={p} />
+                      </div>
                     </div>
                     <Badge variant={nivel.variante}>{nivel.texto}</Badge>
                   </div>
@@ -311,7 +423,14 @@ export function ProductosClient({ productos, categorias, total, pagina, pageSize
                         <span className="ml-1.5 text-caption font-medium text-muted-foreground">{p.unidad_medida}</span>
                       </p>
                     </div>
-                    <p className="font-mono-num text-body-lg font-semibold">{money(p.precio_venta)}</p>
+                    <div className="text-right">
+                      {p.precio_anterior && (
+                        <p className="font-mono-num text-caption text-muted-foreground line-through">
+                          {money(p.precio_anterior)}
+                        </p>
+                      )}
+                      <p className="font-mono-num text-body-lg font-semibold">{money(p.precio_venta)}</p>
+                    </div>
                   </div>
 
                   {viendoEliminados ? (
@@ -328,12 +447,18 @@ export function ProductosClient({ productos, categorias, total, pagina, pageSize
                           <ArrowDownCircle className="h-4 w-4" />Salida
                         </Button>
                       </div>
-                      <div className="mt-2 flex gap-2">
+                      <div className="mt-2 flex flex-wrap gap-2">
                         <Button variant="ghost" size="sm" className="flex-1" onClick={() => setEditando(p)}>
                           <Pencil className="h-3.5 w-3.5" />Editar
                         </Button>
+                        <Button variant="ghost" size="sm" onClick={() => setVerImagenesDe(p)}>
+                          <ImageIcon className="h-3.5 w-3.5" />Fotos
+                        </Button>
+                        <Button variant="ghost" size="sm" onClick={() => setVerHistorialDe(p)}>
+                          <TrendingUp className="h-3.5 w-3.5" />Precios
+                        </Button>
                         <Button variant="ghost" size="sm" className="text-destructive hover:text-destructive" onClick={() => setAEliminar(p)}>
-                          <Trash2 className="h-3.5 w-3.5" />Eliminar
+                          <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     </>
@@ -349,6 +474,17 @@ export function ProductosClient({ productos, categorias, total, pagina, pageSize
               <Table>
                 <TableHeader>
                   <TableRow>
+                    {!viendoEliminados && (
+                      <TableHead className="w-10">
+                        <Checkbox
+                          checked={todosMarcados}
+                          onChange={(e) =>
+                            setSeleccion(e.target.checked ? new Set(productos.map((p) => p.id)) : new Set())
+                          }
+                          aria-label="Seleccionar todos los productos de esta página"
+                        />
+                      </TableHead>
+                    )}
                     <TableHead>Producto</TableHead>
                     <TableHead>SKU</TableHead>
                     <TableHead>Categoría</TableHead>
@@ -362,13 +498,30 @@ export function ProductosClient({ productos, categorias, total, pagina, pageSize
                     const nivel = nivelStock(p);
                     return (
                       <TableRow key={p.id}>
+                        {!viendoEliminados && (
+                          <TableCell>
+                            <CasillaFila
+                              marcada={seleccion.has(p.id)}
+                              onCambio={(m) => alternar(p.id, m)}
+                              nombre={p.nombre}
+                            />
+                          </TableCell>
+                        )}
                         <TableCell>
                           <span className="font-medium">{p.nombre}</span>
                           {p.descripcion && <p className="text-caption text-muted-foreground mt-0.5 line-clamp-1">{p.descripcion}</p>}
+                          <Carteles p={p} />
                         </TableCell>
                         <TableCell><span className="text-caption text-muted-foreground">{p.sku ?? "—"}</span></TableCell>
                         <TableCell>{p.categorias?.nombre ?? <span className="text-muted-foreground">—</span>}</TableCell>
-                        <TableCell className="text-right font-mono-num">{money(p.precio_venta)}</TableCell>
+                        <TableCell className="text-right font-mono-num">
+                          {p.precio_anterior && (
+                            <span className="mr-1.5 text-caption text-muted-foreground line-through">
+                              {money(p.precio_anterior)}
+                            </span>
+                          )}
+                          {money(p.precio_venta)}
+                        </TableCell>
                         <TableCell className="text-right">
                           <div className="flex flex-col items-end gap-1">
                             <span className="font-mono-num font-medium">{cant(p.stock)} {p.unidad_medida}</span>
@@ -391,6 +544,18 @@ export function ProductosClient({ productos, categorias, total, pagina, pageSize
                                 <ArrowDownCircle className="h-3.5 w-3.5" />Salida
                               </Button>
                               <span className="mx-1 h-5 w-px bg-border" aria-hidden="true" />
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                aria-label={`Fotos de ${p.nombre}${p.imagenes === 0 ? " (sin fotos)" : ""}`}
+                                className={p.imagenes === 0 ? "text-warning hover:text-warning" : ""}
+                                onClick={() => setVerImagenesDe(p)}
+                              >
+                                <ImageIcon className="h-3.5 w-3.5" />
+                              </Button>
+                              <Button variant="ghost" size="sm" aria-label={`Historial de precios de ${p.nombre}`} onClick={() => setVerHistorialDe(p)}>
+                                <TrendingUp className="h-3.5 w-3.5" />
+                              </Button>
                               <Button variant="ghost" size="sm" aria-label={`Editar ${p.nombre}`} onClick={() => setEditando(p)}>
                                 <Pencil className="h-3.5 w-3.5" />
                               </Button>
@@ -418,6 +583,13 @@ export function ProductosClient({ productos, categorias, total, pagina, pageSize
         </>
       )}
 
+      <BarraSeleccion
+        cantidad={idsSeleccionados.length}
+        onLimpiar={() => setSeleccion(new Set())}
+        onPrecios={() => setPreciosAbierto(true)}
+        onEtiquetas={() => setEtiquetasAbierto(true)}
+      />
+
       {/* ── Diálogo: crear ── */}
       <Dialog open={crearAbierto} onOpenChange={setCrearAbierto}>
         <DialogContent className="max-h-[85vh] overflow-y-auto">
@@ -426,7 +598,7 @@ export function ProductosClient({ productos, categorias, total, pagina, pageSize
             <DialogDescription>El stock inicial queda registrado como movimiento de carga.</DialogDescription>
           </DialogHeader>
           <form onSubmit={handleCrear} className="space-y-4">
-            <CamposProducto categorias={categorias} />
+            <CamposProducto categorias={categorias} unidadesEnUso={unidadesEnUso} />
             <div className="flex justify-end gap-2 pt-2">
               <Button type="button" variant="ghost" onClick={() => setCrearAbierto(false)}>Cancelar</Button>
               <Button type="submit" disabled={enviando}>{enviando ? "Creando…" : "Crear producto"}</Button>
@@ -444,7 +616,14 @@ export function ProductosClient({ productos, categorias, total, pagina, pageSize
           </DialogHeader>
           {editando && (
             <form onSubmit={handleEditar} className="space-y-4">
-              <CamposProducto categorias={categorias} producto={editando} />
+              {/* La clave fuerza un formulario nuevo por producto: sin ella,
+                  React reusaría los campos y mostraría los valores del anterior. */}
+              <CamposProducto
+                key={editando.id}
+                categorias={categorias}
+                unidadesEnUso={unidadesEnUso}
+                producto={editando}
+              />
               <div className="flex justify-end gap-2 pt-2">
                 <Button type="button" variant="ghost" onClick={() => setEditando(null)}>Cancelar</Button>
                 <Button type="submit" disabled={enviando}>{enviando ? "Guardando…" : "Guardar cambios"}</Button>
@@ -509,80 +688,45 @@ export function ProductosClient({ productos, categorias, total, pagina, pageSize
       />
 
       <ImportarDialog open={importarAbierto} onOpenChange={setImportarAbierto} onImportado={refrescar} />
-    </div>
-  );
-}
 
-/** Campos compartidos por los formularios de alta y edición. */
-function CamposProducto({ categorias, producto }: { categorias: Categoria[]; producto?: ProductoConCategoria }) {
-  const [categoriaId, setCategoriaId] = useState(producto?.categoria_id ?? "");
-  const [unidad, setUnidad] = useState(producto?.unidad_medida ?? "unidad");
-  const editando = !!producto;
-
-  return (
-    <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-      <div className="space-y-1.5 sm:col-span-2">
-        <Label htmlFor="f-nombre">Nombre *</Label>
-        <Input id="f-nombre" name="nombre" defaultValue={producto?.nombre} required maxLength={160} autoFocus={!editando} />
-      </div>
-      <div className="space-y-1.5 sm:col-span-2">
-        <Label htmlFor="f-descripcion">Descripción</Label>
-        <Textarea id="f-descripcion" name="descripcion" rows={2} defaultValue={producto?.descripcion ?? ""} maxLength={600} />
-      </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="f-sku">SKU</Label>
-        <Input id="f-sku" name="sku" defaultValue={producto?.sku ?? ""} maxLength={64} placeholder="Código interno único" />
-      </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="f-codigo">Código de barras</Label>
-        <Input id="f-codigo" name="codigo_barras" defaultValue={producto?.codigo_barras ?? ""} maxLength={64} />
-      </div>
-      <div className="space-y-1.5">
-        <Label>Categoría</Label>
-        <Select value={categoriaId} onValueChange={setCategoriaId}>
-          <SelectTrigger><SelectValue placeholder="Sin categoría" /></SelectTrigger>
-          <SelectContent>
-            {categorias.map((c) => <SelectItem key={c.id} value={c.id}>{c.nombre}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <input type="hidden" name="categoria_id" value={categoriaId} />
-      </div>
-      <div className="space-y-1.5">
-        <Label>Unidad de medida</Label>
-        <Select value={unidad} onValueChange={setUnidad}>
-          <SelectTrigger><SelectValue /></SelectTrigger>
-          <SelectContent>
-            {UNIDADES.map((u) => <SelectItem key={u} value={u}>{u}</SelectItem>)}
-          </SelectContent>
-        </Select>
-        <input type="hidden" name="unidad_medida" value={unidad} />
-      </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="f-costo">Precio costo ($)</Label>
-        <Input id="f-costo" name="precio_costo" type="number" step="0.01" min="0" inputMode="decimal"
-          defaultValue={producto ? Number(producto.precio_costo) : 0} />
-      </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="f-venta">Precio venta ($)</Label>
-        <Input id="f-venta" name="precio_venta" type="number" step="0.01" min="0" inputMode="decimal"
-          defaultValue={producto ? Number(producto.precio_venta) : 0} />
-      </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="f-stock">{editando ? "Stock actual" : "Stock inicial"}</Label>
-        <Input id="f-stock" name="stock" type="number" step="0.01" min="0" inputMode="decimal"
-          defaultValue={producto ? Number(producto.stock) : 0} disabled={editando}
-          aria-describedby={editando ? "f-stock-ayuda" : undefined} />
-        {editando && (
-          <p id="f-stock-ayuda" className="text-caption text-muted-foreground">
-            Usá Entrada o Salida para que el cambio quede en el historial.
-          </p>
-        )}
-      </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="f-minimo">Stock mínimo</Label>
-        <Input id="f-minimo" name="stock_minimo" type="number" step="0.01" min="0" inputMode="decimal"
-          defaultValue={producto ? Number(producto.stock_minimo) : 0} />
-      </div>
+      <PreciosMasivosDialog
+        open={preciosAbierto}
+        onOpenChange={setPreciosAbierto}
+        ids={idsSeleccionados}
+        onListo={trasAccionMasiva}
+      />
+      <EtiquetasMasivasDialog
+        open={etiquetasAbierto}
+        onOpenChange={setEtiquetasAbierto}
+        ids={idsSeleccionados}
+        categorias={categorias}
+        onListo={trasAccionMasiva}
+      />
+      {/* Estos cinco se montan al abrirse en vez de vivir siempre en el árbol:
+          cada uno consulta la base al aparecer, y montarlos recién ahí evita
+          tener que acordarse de limpiar su estado del producto anterior. */}
+      {costosAbierto && (
+        <CostosDialog open onOpenChange={setCostosAbierto} onListo={refrescar} />
+      )}
+      {skusAbierto && <SkusDialog open onOpenChange={setSkusAbierto} onListo={refrescar} />}
+      {escanerAbierto && (
+        <EscanerDialog open onOpenChange={setEscanerAbierto} onListo={refrescar} />
+      )}
+      {verImagenesDe && (
+        <ImagenesDialog
+          key={verImagenesDe.id}
+          producto={verImagenesDe}
+          onOpenChange={(o) => !o && setVerImagenesDe(null)}
+          onListo={refrescar}
+        />
+      )}
+      {verHistorialDe && (
+        <HistorialPreciosDialog
+          key={verHistorialDe.id}
+          producto={verHistorialDe}
+          onOpenChange={(o) => !o && setVerHistorialDe(null)}
+        />
+      )}
     </div>
   );
 }

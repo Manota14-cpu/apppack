@@ -5,16 +5,18 @@ import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
   Package,
+  ClipboardList,
+  ClipboardCheck,
   History,
-  Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const mobileNav = [
-  { nombre: "Dashboard", href: "/dashboard", icono: LayoutDashboard },
+  { nombre: "Panel", href: "/dashboard", icono: LayoutDashboard },
   { nombre: "Productos", href: "/productos", icono: Package },
-  { nombre: "Movimientos", href: "/movimientos", icono: History },
-  { nombre: "Configuración", href: "/configuracion", icono: Settings },
+  { nombre: "Pedidos", href: "/pedidos", icono: ClipboardList },
+  { nombre: "Recuento", href: "/recuentos", icono: ClipboardCheck },
+  { nombre: "Historial", href: "/movimientos", icono: History },
 ];
 
 export function MobileNav() {

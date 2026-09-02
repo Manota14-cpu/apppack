@@ -110,3 +110,27 @@ export function aNumero(valor: unknown): number {
   const n = typeof valor === "number" ? valor : Number(valor);
   return Number.isFinite(n) ? n : 0;
 }
+
+/**
+ * Igual que `enTransaccion`, pero deja anotado el motivo del cambio de precio.
+ *
+ * El disparador `apppack_precio_historial` guarda cada cambio de `price` o
+ * `costPrice` y lee el motivo de una variable de sesión. `set_config(..., true)`
+ * la limita a esta transacción, así que no se filtra a la siguiente consulta
+ * que reutilice la misma conexión del pool.
+ */
+export async function enTransaccionConMotivo<T>(
+  motivo: string,
+  fn: (cliente: PoolClient) => Promise<T>
+): Promise<T> {
+  return enTransaccion(async (cx) => {
+    await cx.query("select set_config('apppack.motivo', $1, true)", [motivo.slice(0, 200)]);
+    return fn(cx);
+  });
+}
+
+/** Sentencia de escritura: devuelve cuántas filas tocó. */
+export async function ejecutar(sql: string, valores: unknown[] = []): Promise<number> {
+  const { rowCount } = await pool().query(sql, valores);
+  return rowCount ?? 0;
+}

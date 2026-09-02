@@ -5,7 +5,15 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import dynamic from "next/dynamic";
 import { motion } from "framer-motion";
-import { AlertTriangle, Database, DollarSign, Package, PackageX, RefreshCw } from "lucide-react";
+import {
+  AlertTriangle,
+  ClipboardList,
+  Database,
+  DollarSign,
+  ImageOff,
+  Package,
+  RefreshCw,
+} from "lucide-react";
 import { MetricCard } from "@/components/dashboard/metric-card";
 import { LowStockAlert } from "@/components/dashboard/low-stock-alert";
 import { RecentMovements } from "@/components/dashboard/recent-movements";
@@ -111,15 +119,47 @@ export function DashboardClient({ metricas, movimientos, faltaMigracion }: Props
           index={2}
         />
         <MetricCard
-          titulo="Sin stock"
-          valor={metricas.sin_stock.toLocaleString("es-AR")}
-          detalle={metricas.sin_stock > 0 ? "Agotados" : "Ninguno agotado"}
-          icono={<PackageX className="h-4 w-4" />}
-          href="/productos?stock=sin"
-          tono={metricas.sin_stock > 0 ? "critico" : undefined}
+          titulo="Pedidos por atender"
+          valor={metricas.pedidos_pendientes.toLocaleString("es-AR")}
+          detalle={
+            metricas.pedidos_pendientes > 0
+              ? "Esperando que los prepares"
+              : `Todo entregado · ${metricas.sin_stock} sin stock`
+          }
+          icono={<ClipboardList className="h-4 w-4" />}
+          href="/pedidos?estado=pendiente"
+          tono={metricas.pedidos_pendientes > 0 ? "alerta" : undefined}
           index={3}
         />
       </div>
+
+      {(metricas.sin_costo > 0 || metricas.sin_imagen > 0) && (
+        <Card>
+          <CardContent className="flex flex-wrap items-center gap-x-6 gap-y-2 p-4 text-caption text-muted-foreground">
+            {metricas.sin_costo > 0 && (
+              <span className="flex items-center gap-2">
+                <DollarSign className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span>
+                  <strong className="text-foreground">{metricas.sin_costo}</strong> productos sin
+                  costo cargado: el valor de inventario de arriba no los cuenta.
+                </span>
+              </span>
+            )}
+            {metricas.sin_imagen > 0 && (
+              <span className="flex items-center gap-2">
+                <ImageOff className="h-3.5 w-3.5 shrink-0" aria-hidden="true" />
+                <span>
+                  <strong className="text-foreground">{metricas.sin_imagen}</strong> sin ninguna
+                  foto: la tienda los muestra con un icono.
+                </span>
+              </span>
+            )}
+            <Button asChild variant="outline" size="sm" className="ml-auto">
+              <Link href="/productos">Completar</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">

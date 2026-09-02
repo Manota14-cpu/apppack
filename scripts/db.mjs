@@ -52,10 +52,19 @@ const PIEZAS = `
              where table_name='Product' and column_name='minStock')  as "columna minStock",
     exists (select 1 from information_schema.columns
              where table_name='Product' and column_name='costPrice') as "columna costPrice",
-    to_regprocedure('public.ajustar_stock(text,int,text,text)')                             is not null as "función ajustar_stock",
-    to_regprocedure('public.crear_producto(text,text,text,text,text,text,int,int,int,int)') is not null as "función crear_producto",
-    to_regprocedure('public.crear_categoria(text,text,text)')                               is not null as "función crear_categoria",
-    to_regprocedure('public.metricas_stock()')                                              is not null as "función metricas_stock"
+    to_regclass('public."Order"')         is not null as "tabla Order",
+    to_regclass('public."PriceChange"')   is not null as "tabla PriceChange",
+    to_regclass('public."StockCount"')    is not null as "tabla StockCount",
+    to_regprocedure('public.ajustar_stock(text,int,text,text)')       is not null as "función ajustar_stock",
+    to_regprocedure('public.crear_producto(jsonb)')                   is not null as "función crear_producto",
+    to_regprocedure('public.actualizar_producto(text,jsonb)')         is not null as "función actualizar_producto",
+    to_regprocedure('public.crear_categoria(text,text,text)')         is not null as "función crear_categoria",
+    to_regprocedure('public.cambiar_estado_pedido(text,text)')        is not null as "función cambiar_estado_pedido",
+    to_regprocedure('public.abrir_recuento(text,text)')               is not null as "función abrir_recuento",
+    to_regprocedure('public.cerrar_recuento(text)')                   is not null as "función cerrar_recuento",
+    to_regprocedure('public.metricas_stock()')                        is not null as "función metricas_stock",
+    exists (select 1 from pg_trigger
+             where tgname = 'apppack_precio_historial' and not tgisinternal) as "disparador de precios"
 `;
 
 async function mostrarEstado() {
