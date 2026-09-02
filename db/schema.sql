@@ -467,6 +467,12 @@ as $$
     -- valor de inventario no significa nada; sin SKU, la importación no
     -- puede actualizar y duplica el catálogo.
     'sin_costo',        (select count(*) from "Product" where active and coalesce("costPrice", 0) = 0),
+    -- Un costo que deja más del 85% de margen no es un costo: es un relleno
+    -- para sacarse de encima el aviso de "falta cargar". Y miente peor que la
+    -- ausencia — un número vacío se nota, uno inventado se cree.
+    'costo_dudoso',     (select count(*) from "Product"
+                          where active and price > 0 and coalesce("costPrice", 0) > 0
+                            and "costPrice" < price * 0.15),
     'sin_sku',          (select count(*) from "Product" where active and coalesce(sku, '') = ''),
     'sin_imagen',       (select count(*) from "Product" p where p.active
                           and not exists (select 1 from "ProductImage" i where i."productId" = p.id)),

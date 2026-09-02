@@ -36,6 +36,7 @@ function revalidarTodo() {
   revalidatePath("/productos");
   revalidatePath("/movimientos");
   revalidatePath("/dashboard");
+  revalidatePath("/informes");
   revalidatePath("/pedidos");
   revalidatePath("/recuentos");
   revalidatePath("/configuracion");
@@ -379,7 +380,14 @@ export interface ProductoSinDato {
   precio_costo: number;
 }
 
-/** Productos activos a los que les falta el costo: el valor de inventario los ignora. */
+/**
+ * Productos cuyo costo hay que atender.
+ *
+ * No solo los que no lo tienen: también los que tienen uno tan bajo respecto
+ * del precio que no puede ser real. Un costo de relleno pasa el chequeo de
+ * "está cargado" y después hace que el informe muestre 97% de margen con toda
+ * confianza — miente peor que un campo vacío, porque el vacío se nota.
+ */
 export async function productosSinCosto(): Promise<ProductoSinDato[]> {
   await requerirSesion();
   try {
@@ -387,7 +395,9 @@ export async function productosSinCosto(): Promise<ProductoSinDato[]> {
       `select p.id, p.name as nombre, c.name as categoria, p.sku,
               p.price as precio_venta, coalesce(p."costPrice", 0) as precio_costo
          from "Product" p join "Category" c on c.id = p."categoryId"
-        where p.active and coalesce(p."costPrice", 0) = 0
+        where p.active
+          and (coalesce(p."costPrice", 0) = 0
+               or (p.price > 0 and p."costPrice" < p.price * 0.15))
         order by p.price desc, p.name
         limit 500`
     );

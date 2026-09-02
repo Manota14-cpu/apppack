@@ -64,10 +64,11 @@ export function CostosDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-h-[85vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Cargar costos</DialogTitle>
+          <DialogTitle>Costos a revisar</DialogTitle>
           <DialogDescription>
-            Sin precio de costo, el valor de inventario del panel ignora al producto y no hay
-            margen que calcular. Podés cargar los que sepas y dejar el resto para después.
+            Los que no tienen costo, y los que tienen uno tan bajo respecto del precio que
+            difícilmente sea real. Un costo de relleno no es mejor que ninguno: hace que el
+            informe muestre un margen que no existe. Cargá los que sepas y dejá el resto.
           </DialogDescription>
         </DialogHeader>
 
@@ -79,7 +80,7 @@ export function CostosDialog({
           </div>
         ) : filas.length === 0 ? (
           <p className="rounded-xl border border-border p-6 text-center text-caption text-muted-foreground">
-            Todos los productos activos ya tienen su costo cargado.
+            Todos los costos están cargados y ninguno parece de relleno.
           </p>
         ) : (
           <>
@@ -93,6 +94,7 @@ export function CostosDialog({
                       <p className="truncate text-caption font-medium">{f.nombre}</p>
                       <p className="text-caption text-muted-foreground">
                         {f.categoria} · vende a {money(f.precio_venta)}
+                        {f.precio_costo > 0 && ` · hoy ${money(f.precio_costo)}`}
                         {m !== null && ` · margen ${m}%`}
                       </p>
                     </div>

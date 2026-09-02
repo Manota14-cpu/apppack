@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { motion } from "framer-motion";
 import {
   LayoutDashboard,
+  BarChart3,
   Package,
   ClipboardList,
   ClipboardCheck,
@@ -15,6 +16,7 @@ import { cn } from "@/lib/utils";
 
 const navegacion = [
   { nombre: "Dashboard", href: "/dashboard", icono: LayoutDashboard },
+  { nombre: "Informes", href: "/informes", icono: BarChart3 },
   { nombre: "Productos", href: "/productos", icono: Package },
   { nombre: "Pedidos", href: "/pedidos", icono: ClipboardList },
   { nombre: "Recuentos", href: "/recuentos", icono: ClipboardCheck },

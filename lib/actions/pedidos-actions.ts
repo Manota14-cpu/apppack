@@ -12,6 +12,7 @@ import type { Pedido } from "@/types/database.types";
 function revalidarPedidos() {
   revalidatePath("/pedidos");
   revalidatePath("/dashboard");
+  revalidatePath("/informes");
   revalidatePath("/productos");
   revalidatePath("/movimientos");
 }

@@ -9,7 +9,7 @@ import type { MetricasStock, MovimientoConProducto } from "@/types/database.type
 const METRICAS_VACIAS: MetricasStock = {
   total_productos: 0, valor_costo: 0, valor_venta: 0, unidades_totales: 0,
   stock_bajo: 0, sin_stock: 0, inactivos: 0,
-  sin_costo: 0, sin_sku: 0, sin_imagen: 0, pedidos_pendientes: 0,
+  sin_costo: 0, costo_dudoso: 0, sin_sku: 0, sin_imagen: 0, pedidos_pendientes: 0,
   productos_criticos: [], stock_por_categoria: [],
 };
 

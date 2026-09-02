@@ -412,15 +412,18 @@ export function CasillaFila({
 export function AvisoDatosFaltantes({
   sinSku,
   sinCosto,
+  costoDudoso,
   onSkus,
   onCostos,
 }: {
   sinSku: number;
   sinCosto: number;
+  /** Con un costo tan bajo respecto del precio que no puede ser real. */
+  costoDudoso: number;
   onSkus: () => void;
   onCostos: () => void;
 }) {
-  if (sinSku === 0 && sinCosto === 0) return null;
+  if (sinSku === 0 && sinCosto === 0 && costoDudoso === 0) return null;
 
   return (
     <div className="flex flex-wrap items-center gap-3 rounded-xl border border-warning/30 bg-warning/[0.06] px-4 py-3">
@@ -438,6 +441,14 @@ export function AvisoDatosFaltantes({
             inventario los ignora.
           </span>
         )}
+        {/* Un costo inventado miente peor que uno ausente: el número vacío se
+            nota, el inventado se cree. */}
+        {costoDudoso > 0 && (
+          <span>
+            <strong className="text-foreground">{costoDudoso}</strong> con un costo que deja más
+            del 85% de margen — si es de relleno, el margen del informe es ficción.
+          </span>
+        )}
       </div>
       <div className="ml-auto flex gap-2">
         {sinSku > 0 && (
@@ -445,9 +456,9 @@ export function AvisoDatosFaltantes({
             Generar SKUs
           </Button>
         )}
-        {sinCosto > 0 && (
+        {(sinCosto > 0 || costoDudoso > 0) && (
           <Button size="sm" variant="outline" onClick={onCostos}>
-            Cargar costos
+            {sinCosto > 0 ? "Cargar costos" : "Revisar costos"}
           </Button>
         )}
       </div>

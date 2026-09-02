@@ -97,6 +97,7 @@ interface Props {
   unidadesEnUso: string[];
   sinSku: number;
   sinCosto: number;
+  costoDudoso: number;
   filtros: { q: string; categoria: string; stock: string; estado: string };
 }
 
@@ -109,6 +110,7 @@ export function ProductosClient({
   unidadesEnUso,
   sinSku,
   sinCosto,
+  costoDudoso,
   filtros,
 }: Props) {
   const router = useRouter();
@@ -318,6 +320,7 @@ export function ProductosClient({
         <AvisoDatosFaltantes
           sinSku={sinSku}
           sinCosto={sinCosto}
+          costoDudoso={costoDudoso}
           onSkus={() => setSkusAbierto(true)}
           onCostos={() => setCostosAbierto(true)}
         />

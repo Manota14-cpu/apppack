@@ -92,6 +92,8 @@ export interface MetricasStock {
   inactivos: number;
   /** Productos activos sin precio de costo: distorsionan el valor de inventario. */
   sin_costo: number;
+  /** Con un costo tan bajo respecto del precio que no puede ser real. */
+  costo_dudoso: number;
   /** Productos activos sin SKU: la importación no puede actualizarlos. */
   sin_sku: number;
   /** Productos activos sin ninguna imagen: la web los muestra con un icono. */

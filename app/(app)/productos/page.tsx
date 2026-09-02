@@ -63,9 +63,11 @@ async function getProductos(params: Params) {
     ),
     // Lo que falta cargar en TODO el catálogo, no solo en la página que se ve:
     // el aviso tiene que decir cuánto falta de verdad.
-    consultar<{ sin_sku: number; sin_costo: number }>(
+    consultar<{ sin_sku: number; sin_costo: number; costo_dudoso: number }>(
       `select count(*) filter (where coalesce(sku, '') = '')::int      as sin_sku,
-              count(*) filter (where coalesce("costPrice", 0) = 0)::int as sin_costo
+              count(*) filter (where coalesce("costPrice", 0) = 0)::int as sin_costo,
+              count(*) filter (where price > 0 and coalesce("costPrice", 0) > 0
+                                 and "costPrice" < price * 0.15)::int   as costo_dudoso
          from "Product" where active`
     ),
   ]);
@@ -97,6 +99,7 @@ async function getProductos(params: Params) {
     unidadesEnUso: unidades.map((u) => u.unidad),
     sinSku: faltantes[0]?.sin_sku ?? 0,
     sinCosto: faltantes[0]?.sin_costo ?? 0,
+    costoDudoso: faltantes[0]?.costo_dudoso ?? 0,
     filtros: {
       q: params.q ?? "",
       categoria: params.categoria ?? "todas",
