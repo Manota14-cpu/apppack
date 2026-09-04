@@ -4,6 +4,7 @@ import {
   cierreCajaSchema,
   cobroSchema,
   MAX_RENGLONES_COBRO,
+  movimientoCajaSchema,
   totalDeCobro,
 } from "@/lib/validation";
 
@@ -94,5 +95,59 @@ describe("apertura y cierre", () => {
 
   it("contar cero es válido: puede no haber quedado efectivo", () => {
     expect(cierreCajaSchema.safeParse({ cajaId: "c1", contado: 0 }).success).toBe(true);
+  });
+});
+
+describe("movimientoCajaSchema", () => {
+  const base = { cajaId: "c1", tipo: "retiro", monto: 5000, motivo: "Flete" };
+
+  it("acepta un retiro con motivo", () => {
+    const r = movimientoCajaSchema.parse(base);
+    expect(r.tipo).toBe("retiro");
+    expect(r.monto).toBe(5000);
+  });
+
+  it("exige el motivo", () => {
+    // Un retiro sin motivo, mirado a fin de mes, es indistinguible de un
+    // faltante: por eso no se puede dejar vacío.
+    expect(movimientoCajaSchema.safeParse({ ...base, motivo: "  " }).success).toBe(false);
+  });
+
+  it("rechaza monto cero o negativo", () => {
+    expect(movimientoCajaSchema.safeParse({ ...base, monto: 0 }).success).toBe(false);
+    expect(movimientoCajaSchema.safeParse({ ...base, monto: -100 }).success).toBe(false);
+  });
+
+  it("el monto es siempre positivo: el signo lo da el tipo", () => {
+    const r = movimientoCajaSchema.parse({ ...base, tipo: "ingreso", monto: 3000 });
+    expect(r.monto).toBeGreaterThan(0);
+    expect(r.tipo).toBe("ingreso");
+  });
+
+  it("rechaza un tipo inventado", () => {
+    expect(movimientoCajaSchema.safeParse({ ...base, tipo: "prestamo" }).success).toBe(false);
+  });
+});
+
+describe("arqueo con retiros", () => {
+  // El mismo cálculo que hacen la pantalla, el cierre y el Excel. Si los tres
+  // no dan igual, el papel contradice a la app justo cuando hay que firmarlo.
+  const esperado = (fondo: number, efectivo: number, ingresado: number, retirado: number) =>
+    fondo + efectivo + ingresado - retirado;
+
+  it("un retiro baja lo que debería haber en el cajón", () => {
+    expect(esperado(20_000, 50_000, 0, 15_000)).toBe(55_000);
+  });
+
+  it("un ingreso lo sube", () => {
+    expect(esperado(20_000, 50_000, 5_000, 0)).toBe(75_000);
+  });
+
+  it("sin movimientos es fondo más efectivo, como antes", () => {
+    expect(esperado(20_000, 50_000, 0, 0)).toBe(70_000);
+  });
+
+  it("retirar todo deja el cajón en cero, no en negativo por error de signo", () => {
+    expect(esperado(20_000, 50_000, 0, 70_000)).toBe(0);
   });
 });

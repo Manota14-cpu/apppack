@@ -201,6 +201,25 @@ export interface TotalesCaja {
   cantidad: number;
 }
 
+export const TIPOS_MOVIMIENTO_CAJA = ["retiro", "ingreso"] as const;
+export type TipoMovimientoCaja = (typeof TIPOS_MOVIMIENTO_CAJA)[number];
+
+/**
+ * Plata que entra o sale de la caja sin ser una venta.
+ *
+ * Sin registrarlo, pagar un flete con la plata del cajón haría que el cierre
+ * marcara un faltante que no lo es — y al tercer día nadie mira más la
+ * diferencia, que es justo el número por el que existe el turno.
+ */
+export interface MovimientoCaja {
+  id: string;
+  tipo: string;
+  /** Siempre positivo; el signo lo da el tipo. */
+  monto: number;
+  motivo: string;
+  created_at: Fecha;
+}
+
 export interface Caja {
   id: string;
   numero: number;
@@ -214,6 +233,11 @@ export interface Caja {
   closed_at: Fecha | null;
   ventas: VentaCaja[];
   totales: TotalesCaja;
+  movimientos: MovimientoCaja[];
+  /** Suma de los retiros del turno. */
+  retirado: number;
+  /** Suma de lo que se agregó al cajón. */
+  ingresado: number;
 }
 
 /** Un renglón del cobro, antes de confirmarlo. */

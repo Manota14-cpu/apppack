@@ -9,9 +9,10 @@ import {
   aperturaCajaSchema,
   cierreCajaSchema,
   cobroSchema,
+  movimientoCajaSchema,
   primerError,
 } from "@/lib/validation";
-import type { Caja } from "@/types/database.types";
+import type { Caja, Fecha } from "@/types/database.types";
 
 function revalidarCaja() {
   revalidatePath("/caja");
@@ -60,7 +61,18 @@ const CAMPOS_CAJA = `
     )
     from "Order" o
     where o."sessionId" = c.id and o.status <> 'cancelado'
-  ) as totales
+  ) as totales,
+  coalesce((
+    select jsonb_agg(jsonb_build_object(
+             'id', m.id, 'tipo', m.type, 'monto', m.amount,
+             'motivo', m.reason, 'created_at', m."createdAt"
+           ) order by m."createdAt" desc)
+      from "CashMovement" m where m."sessionId" = c.id
+  ), '[]'::jsonb) as movimientos,
+  (select coalesce(sum(amount), 0)::int from "CashMovement" m
+    where m."sessionId" = c.id and m.type = 'retiro')   as retirado,
+  (select coalesce(sum(amount), 0)::int from "CashMovement" m
+    where m."sessionId" = c.id and m.type = 'ingreso')  as ingresado
 `;
 
 export async function cajaAbierta(): Promise<Caja | null> {
@@ -94,8 +106,8 @@ export interface CajaResumen {
   estado: string;
   fondo: number;
   contado: number | null;
-  opened_at: string;
-  closed_at: string | null;
+  opened_at: Fecha;
+  closed_at: Fecha | null;
   ventas: number;
   total: number;
   efectivo: number;
@@ -118,10 +130,15 @@ export async function historialCajas(): Promise<CajaResumen[]> {
                 where o."sessionId" = c.id and o.status <> 'cancelado'
                   and coalesce(o."paymentMethod",'efectivo') = 'efectivo')   as efectivo,
               case when c."countedCash" is not null then
-                c."countedCash" - (c."openingFloat" + (
-                  select coalesce(sum(o.total), 0)::int from "Order" o
-                   where o."sessionId" = c.id and o.status <> 'cancelado'
-                     and coalesce(o."paymentMethod",'efectivo') = 'efectivo'))
+                c."countedCash" - (
+                  c."openingFloat"
+                  + (select coalesce(sum(o.total), 0)::int from "Order" o
+                      where o."sessionId" = c.id and o.status <> 'cancelado'
+                        and coalesce(o."paymentMethod",'efectivo') = 'efectivo')
+                  + (select coalesce(sum(m.amount), 0)::int from "CashMovement" m
+                      where m."sessionId" = c.id and m.type = 'ingreso')
+                  - (select coalesce(sum(m.amount), 0)::int from "CashMovement" m
+                      where m."sessionId" = c.id and m.type = 'retiro'))
               end                                                            as diferencia
          from "CashSession" c
         order by c.number desc
@@ -130,6 +147,38 @@ export async function historialCajas(): Promise<CajaResumen[]> {
   } catch (error) {
     console.error("[caja:historial]", error);
     return [];
+  }
+}
+
+/**
+ * Anota un retiro o un ingreso de efectivo.
+ *
+ * Va contra el arqueo: lo que sale con motivo anotado deja de contar como
+ * faltante al cerrar.
+ */
+export async function moverCaja(
+  cajaId: string,
+  tipo: string,
+  monto: number,
+  motivo: string
+) {
+  await requerirSesion();
+
+  const parsed = movimientoCajaSchema.safeParse({ cajaId, tipo, monto, motivo });
+  if (!parsed.success) return falloDeValidacion(primerError(parsed.error));
+  const d = parsed.data;
+
+  try {
+    await consultarValor<string>(`select mover_caja($1, $2, $3, $4)`, [
+      d.cajaId,
+      d.tipo,
+      d.monto,
+      d.motivo,
+    ]);
+    revalidatePath("/caja");
+    return { success: true as const };
+  } catch (error) {
+    return fallo(error, "caja:mover");
   }
 }
 
@@ -212,6 +261,8 @@ export interface Arqueo {
   fondo: number;
   efectivo: number;
   total: number;
+  retiros: number;
+  ingresos: number;
   esperado: number;
   contado: number;
   /** Contado menos esperado. Negativo es faltante. */

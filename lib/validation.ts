@@ -377,3 +377,16 @@ export const cobroSchema = z.object({
 export function totalDeCobro(items: { precio: number; cantidad: number }[]): number {
   return items.reduce((s, i) => s + i.precio * i.cantidad, 0);
 }
+
+export const movimientoCajaSchema = z.object({
+  cajaId: z.string().trim().min(1, "Caja inválida").max(64),
+  tipo: z.enum(["retiro", "ingreso"]),
+  monto: z.coerce
+    .number({ message: "El monto tiene que ser un número" })
+    .min(1, "El monto tiene que ser mayor a cero")
+    .max(99_999_999, "El monto es demasiado grande")
+    .transform((n) => Math.round(n)),
+  // El motivo es obligatorio a propósito: un retiro sin motivo es
+  // indistinguible de un faltante cuando se mira el cierre a fin de mes.
+  motivo: z.string().trim().min(1, "Escribí para qué fue").max(200),
+});

@@ -3,9 +3,12 @@
 import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
+  ArrowDownLeft,
+  ArrowUpRight,
   Download,
   Minus,
   Plus,
+  Printer,
   Search,
   Trash2,
   Wallet,
@@ -25,6 +28,7 @@ import {
   buscarParaCobrar,
   cerrarCaja,
   cobrar,
+  moverCaja,
   verCaja,
   type CajaResumen,
   type ProductoParaCobrar,
@@ -105,6 +109,7 @@ export function CajaClient({ abierta, historial }: Props) {
         <>
           <TotalesDelTurno caja={abierta} />
           <Mostrador caja={abierta} onCobrado={refrescar} />
+          <MovimientosDeCaja caja={abierta} onCambio={refrescar} />
           <VentasDelTurno caja={abierta} />
         </>
       ) : (
@@ -168,8 +173,13 @@ export function CajaClient({ abierta, historial }: Props) {
   );
 }
 
+/** Lo que debería haber en el cajón, contando retiros e ingresos. */
+function efectivoEsperado(caja: Caja): number {
+  return caja.fondo + caja.totales.efectivo + caja.ingresado - caja.retirado;
+}
+
 function TotalesDelTurno({ caja }: { caja: Caja }) {
-  const esperado = caja.fondo + caja.totales.efectivo;
+  const esperado = efectivoEsperado(caja);
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       <Dato titulo="Cobrado" valor={money(caja.totales.total)} pie={`${caja.totales.cantidad} ${caja.totales.cantidad === 1 ? "venta" : "ventas"}`} />
@@ -177,7 +187,11 @@ function TotalesDelTurno({ caja }: { caja: Caja }) {
       <Dato
         titulo="Debería haber en caja"
         valor={money(esperado)}
-        pie="fondo + cobrado en efectivo"
+        pie={
+          caja.retirado > 0 || caja.ingresado > 0
+            ? `fondo + efectivo${caja.ingresado > 0 ? ` + ${money(caja.ingresado)}` : ""}${caja.retirado > 0 ? ` − ${money(caja.retirado)}` : ""}`
+            : "fondo + cobrado en efectivo"
+        }
       />
       <Dato
         titulo="Otros medios"
@@ -470,6 +484,142 @@ function Mostrador({ caja, onCobrado }: { caja: Caja; onCobrado: () => void }) {
   );
 }
 
+/**
+ * Retiros e ingresos de efectivo.
+ *
+ * El motivo es obligatorio: un retiro sin motivo, mirado a fin de mes, es
+ * indistinguible de un faltante. Y lo que se saca acá deja de contar como
+ * diferencia al cerrar, que es lo que hace que el arqueo siga significando algo
+ * después del primer flete pagado del cajón.
+ */
+function MovimientosDeCaja({ caja, onCambio }: { caja: Caja; onCambio: () => void }) {
+  const [abierto, setAbierto] = useState(false);
+  const [tipo, setTipo] = useState<"retiro" | "ingreso">("retiro");
+  const [monto, setMonto] = useState("");
+  const [motivo, setMotivo] = useState("");
+  const [ocupado, setOcupado] = useState(false);
+
+  function abrir(cual: "retiro" | "ingreso") {
+    setTipo(cual);
+    setMonto("");
+    setMotivo("");
+    setAbierto(true);
+  }
+
+  async function guardar() {
+    setOcupado(true);
+    try {
+      const r = await moverCaja(caja.id, tipo, Number(monto) || 0, motivo);
+      if (!r.success) return void toast.error(r.error);
+      toast.success(tipo === "retiro" ? "Retiro anotado" : "Ingreso anotado", {
+        description: `${money(Number(monto) || 0)} — ${motivo}`,
+      });
+      setAbierto(false);
+      onCambio();
+    } finally {
+      setOcupado(false);
+    }
+  }
+
+  return (
+    <Card>
+      <CardContent className="space-y-4 p-5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h2 className="text-body font-semibold">Movimientos de efectivo</h2>
+            <p className="text-caption text-muted-foreground">
+              Plata que entra o sale del cajón sin ser una venta.
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button variant="outline" size="sm" onClick={() => abrir("retiro")}>
+              <ArrowUpRight className="h-3.5 w-3.5" />
+              Retirar
+            </Button>
+            <Button variant="outline" size="sm" onClick={() => abrir("ingreso")}>
+              <ArrowDownLeft className="h-3.5 w-3.5" />
+              Agregar
+            </Button>
+          </div>
+        </div>
+
+        {caja.movimientos.length > 0 && (
+          <ul className="divide-y divide-border rounded-xl border border-border">
+            {caja.movimientos.map((m) => (
+              <li key={m.id} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2.5">
+                <span className="text-caption text-muted-foreground">{hora(m.created_at)}</span>
+                <span className="min-w-0 flex-1 truncate text-caption">{m.motivo}</span>
+                <span
+                  className={`font-mono-num text-caption font-semibold ${
+                    m.tipo === "retiro" ? "text-warning" : "text-foreground"
+                  }`}
+                >
+                  {m.tipo === "retiro" ? "−" : "+"}
+                  {money(m.monto)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        )}
+      </CardContent>
+
+      <Dialog open={abierto} onOpenChange={setAbierto}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{tipo === "retiro" ? "Retirar efectivo" : "Agregar efectivo"}</DialogTitle>
+            <DialogDescription>
+              {tipo === "retiro"
+                ? "Lo que saques deja de contar como faltante en el cierre."
+                : "Cambio o refuerzo que se suma al cajón."}
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="space-y-4">
+            <div className="space-y-1.5">
+              <Label htmlFor="mov-monto">Monto ($)</Label>
+              <Input
+                id="mov-monto"
+                type="number"
+                min="1"
+                step="1"
+                inputMode="numeric"
+                value={monto}
+                onChange={(e) => setMonto(e.target.value)}
+                autoFocus
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor="mov-motivo">Motivo *</Label>
+              <Input
+                id="mov-motivo"
+                value={motivo}
+                onChange={(e) => setMotivo(e.target.value)}
+                placeholder={tipo === "retiro" ? "Ej: flete, depósito al banco" : "Ej: cambio"}
+                maxLength={200}
+                aria-describedby="mov-motivo-ayuda"
+              />
+              <p id="mov-motivo-ayuda" className="text-caption text-muted-foreground">
+                Es obligatorio. A fin de mes, un retiro sin motivo se lee igual que un faltante.
+              </p>
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <Button variant="ghost" onClick={() => setAbierto(false)}>
+                Cancelar
+              </Button>
+              <Button
+                onClick={guardar}
+                disabled={ocupado || !motivo.trim() || !(Number(monto) > 0)}
+              >
+                {ocupado ? "Guardando…" : tipo === "retiro" ? "Retirar" : "Agregar"}
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </Card>
+  );
+}
+
 function VentasDelTurno({ caja }: { caja: Caja }) {
   if (caja.ventas.length === 0) return null;
 
@@ -486,6 +636,15 @@ function VentasDelTurno({ caja }: { caja: Caja }) {
             </span>
             <Badge variant="outline">{ETIQUETA_PAGO[v.metodo_pago] ?? v.metodo_pago}</Badge>
             <span className="font-mono-num text-caption font-semibold">{money(v.total)}</span>
+            <a
+              href={`/comprobante/${v.id}?imprimir=1`}
+              target="_blank"
+              rel="noreferrer"
+              aria-label={`Imprimir el comprobante de la venta ${v.numero}`}
+              className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-white/[0.06] hover:text-foreground"
+            >
+              <Printer className="h-3.5 w-3.5" aria-hidden="true" />
+            </a>
           </li>
         ))}
       </ul>
@@ -586,7 +745,7 @@ function CerrarCajaDialog({
   const [nota, setNota] = useState("");
   const [ocupado, setOcupado] = useState(false);
 
-  const esperado = caja.fondo + caja.totales.efectivo;
+  const esperado = efectivoEsperado(caja);
   const hayContado = contado.trim() !== "";
   const diferencia = hayContado ? Math.round(Number(contado) || 0) - esperado : null;
 
@@ -640,6 +799,22 @@ function CerrarCajaDialog({
                 {money(caja.totales.efectivo)}
               </p>
             </div>
+            {caja.retirado > 0 && (
+              <div>
+                <p className="text-overline text-muted-foreground">Retirado</p>
+                <p className="font-mono-num text-body-lg font-semibold">
+                  −{money(caja.retirado)}
+                </p>
+              </div>
+            )}
+            {caja.ingresado > 0 && (
+              <div>
+                <p className="text-overline text-muted-foreground">Agregado</p>
+                <p className="font-mono-num text-body-lg font-semibold">
+                  +{money(caja.ingresado)}
+                </p>
+              </div>
+            )}
             <div>
               <p className="text-overline text-muted-foreground">Debería haber</p>
               <p className="font-mono-num text-body-lg font-semibold">{money(esperado)}</p>

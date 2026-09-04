@@ -465,16 +465,49 @@ begin
 end;
 $$;
 
+-- Registra plata que entra o sale sin ser una venta.
+create or replace function mover_caja(
+  p_caja_id text,
+  p_tipo    text,
+  p_monto   int,
+  p_motivo  text
+) returns text
+language plpgsql
+as $$
+declare
+  v_id text;
+begin
+  if p_tipo not in ('retiro', 'ingreso') then
+    raise exception 'Tipo de movimiento inválido.' using errcode = 'P0001';
+  end if;
+  if coalesce(p_monto, 0) <= 0 then
+    raise exception 'El monto tiene que ser mayor a cero.' using errcode = 'P0001';
+  end if;
+  if not exists (select 1 from "CashSession" where id = p_caja_id and status = 'abierta') then
+    raise exception 'La caja no está abierta.' using errcode = 'P0001';
+  end if;
+
+  insert into "CashMovement" ("sessionId", type, amount, reason)
+  values (p_caja_id, p_tipo, p_monto, p_motivo)
+  returning id into v_id;
+
+  return v_id;
+end;
+$$;
+
 -- Cierra el turno y devuelve el arqueo.
 create or replace function cerrar_caja(p_caja_id text, p_contado int, p_nota text default null)
 returns jsonb
 language plpgsql
 as $$
 declare
-  v_estado  text;
-  v_fondo   int;
+  v_estado   text;
+  v_fondo    int;
   v_efectivo bigint;
   v_total    bigint;
+  v_retiros  bigint;
+  v_ingresos bigint;
+  v_esperado bigint;
 begin
   select status, "openingFloat" into v_estado, v_fondo
   from "CashSession" where id = p_caja_id
@@ -487,11 +520,21 @@ begin
     raise exception 'Esta caja ya está cerrada.' using errcode = 'P0001';
   end if;
 
-  select coalesce(sum(total) filter (where "paymentMethod" = 'efectivo'), 0),
+  select coalesce(sum(total) filter (where coalesce("paymentMethod", 'efectivo') = 'efectivo'), 0),
          coalesce(sum(total), 0)
     into v_efectivo, v_total
     from "Order"
    where "sessionId" = p_caja_id and status <> 'cancelado';
+
+  select coalesce(sum(amount) filter (where type = 'retiro'), 0),
+         coalesce(sum(amount) filter (where type = 'ingreso'), 0)
+    into v_retiros, v_ingresos
+    from "CashMovement"
+   where "sessionId" = p_caja_id;
+
+  -- Lo que debería haber en el cajón: el fondo, más lo cobrado en efectivo,
+  -- más lo que se agregó, menos lo que se sacó.
+  v_esperado := v_fondo + v_efectivo + v_ingresos - v_retiros;
 
   update "CashSession"
      set status = 'cerrada',
@@ -504,9 +547,11 @@ begin
     'fondo', v_fondo,
     'efectivo', v_efectivo,
     'total', v_total,
-    'esperado', v_fondo + v_efectivo,
+    'retiros', v_retiros,
+    'ingresos', v_ingresos,
+    'esperado', v_esperado,
     'contado', greatest(coalesce(p_contado, 0), 0),
-    'diferencia', greatest(coalesce(p_contado, 0), 0) - (v_fondo + v_efectivo)
+    'diferencia', greatest(coalesce(p_contado, 0), 0) - v_esperado
   );
 end;
 $$;

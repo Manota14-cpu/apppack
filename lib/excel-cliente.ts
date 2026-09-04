@@ -360,6 +360,14 @@ export interface CajaExportable {
     total: number;
     cantidad: number;
   };
+  retirado: number;
+  ingresado: number;
+  movimientos: {
+    tipo: string;
+    monto: number;
+    motivo: string;
+    created_at: Fecha;
+  }[];
   ventas: {
     numero: number;
     nombre: string;
@@ -378,7 +386,7 @@ export async function descargarCaja(caja: CajaExportable) {
   const libro = new ExcelJS.Workbook();
   const hoja = libro.addWorksheet(`Caja ${caja.numero}`);
 
-  const esperado = caja.fondo + caja.totales.efectivo;
+  const esperado = caja.fondo + caja.totales.efectivo + caja.ingresado - caja.retirado;
   const diferencia = caja.contado === null ? null : caja.contado - esperado;
 
   const titulo = (texto: string) => {
@@ -397,6 +405,8 @@ export async function descargarCaja(caja: CajaExportable) {
   titulo("Arqueo");
   hoja.addRow(["Fondo inicial", caja.fondo]);
   hoja.addRow(["Cobrado en efectivo", caja.totales.efectivo]);
+  hoja.addRow(["Agregado al cajón", caja.ingresado]);
+  hoja.addRow(["Retirado del cajón", -caja.retirado]);
   hoja.addRow(["Efectivo esperado en caja", esperado]);
   hoja.addRow(["Contado al cerrar", caja.contado ?? "—"]);
   // La diferencia es el número por el que existe el turno: sin él, cerrar la
@@ -412,6 +422,21 @@ export async function descargarCaja(caja: CajaExportable) {
   hoja.addRow(["Total cobrado", caja.totales.total]);
   hoja.addRow(["Ventas", caja.totales.cantidad]);
   hoja.addRow([]);
+
+  if (caja.movimientos.length > 0) {
+    titulo("Movimientos de efectivo");
+    const enc = hoja.addRow(["hora", "tipo", "motivo", "monto"]);
+    enc.font = { bold: true };
+    for (const m of caja.movimientos) {
+      hoja.addRow([
+        fechaHora(m.created_at),
+        m.tipo,
+        m.motivo,
+        m.tipo === "retiro" ? -m.monto : m.monto,
+      ]);
+    }
+    hoja.addRow([]);
+  }
 
   titulo("Ventas del turno");
   const encabezado = hoja.addRow([

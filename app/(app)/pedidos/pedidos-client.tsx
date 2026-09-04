@@ -11,6 +11,7 @@ import {
   MapPin,
   MessageCircle,
   Phone,
+  Printer,
   Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
@@ -391,6 +392,15 @@ export function PedidosClient({ pedidos, total, pagina, pageSize, resumen, filtr
                           Escribirle por WhatsApp
                         </a>
                       )}
+                      <a
+                        href={`/comprobante/${p.id}`}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="inline-flex h-10 items-center gap-2 rounded-xl border border-border px-4 text-caption font-medium transition-colors hover:bg-white/[0.04]"
+                      >
+                        <Printer className="h-4 w-4" aria-hidden="true" />
+                        Comprobante
+                      </a>
                       <Button
                         variant="ghost"
                         className="ml-auto text-destructive hover:text-destructive"
