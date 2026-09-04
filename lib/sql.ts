@@ -90,7 +90,13 @@ export const CAMPOS_PEDIDO = `
   o.total,
   -- Solo lo llevan las ventas de mostrador; en un pedido de la web es nulo.
   o."paymentMethod"   as metodo_pago,
+  o."cashReceived"    as recibido,
   o."sessionId"       as caja_id,
+  coalesce((
+    select jsonb_agg(jsonb_build_object('metodo', pg.method, 'monto', pg.amount)
+                     order by pg.amount desc)
+      from "OrderPayment" pg where pg."orderId" = o.id
+  ), '[]'::jsonb) as pagos,
   o."createdAt"       as created_at,
   coalesce((
     select jsonb_agg(jsonb_build_object(

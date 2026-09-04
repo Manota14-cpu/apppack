@@ -8,7 +8,8 @@ import { avisarATienda } from "@/lib/revalidar-tienda";
 import {
   aperturaCajaSchema,
   cierreCajaSchema,
-  cobroSchema,
+  cobroConPagosSchema,
+  devolucionSchema,
   movimientoCajaSchema,
   primerError,
 } from "@/lib/validation";
@@ -42,7 +43,8 @@ const CAMPOS_CAJA = `
   coalesce((
     select jsonb_agg(jsonb_build_object(
              'id', o.id, 'numero', o.number, 'nombre', o.nombre,
-             'total', o.total, 'metodo_pago', coalesce(o."paymentMethod", 'efectivo'),
+             'total', o.total, 'canal', o.channel,
+             'metodo_pago', coalesce(o."paymentMethod", 'efectivo'),
              'notas', o.notas, 'created_at', o."createdAt",
              'renglones', (select count(*)::int from "OrderItem" i where i."orderId" = o.id),
              'unidades', (select coalesce(sum(i.quantity), 0)::int from "OrderItem" i where i."orderId" = o.id)
@@ -50,16 +52,22 @@ const CAMPOS_CAJA = `
       from "Order" o
      where o."sessionId" = c.id and o.status <> 'cancelado'
   ), '[]'::jsonb) as ventas,
+  -- Los totales por medio salen de la tabla de pagos, no de la etiqueta: en
+  -- una venta pagada mitad y mitad la etiqueta dice "mixto", y repartirla por
+  -- ahí sumaría el importe entero a un solo medio.
   (
     select jsonb_build_object(
-      'efectivo',      coalesce(sum(o.total) filter (where coalesce(o."paymentMethod",'efectivo') = 'efectivo'), 0),
-      'transferencia', coalesce(sum(o.total) filter (where o."paymentMethod" = 'transferencia'), 0),
-      'tarjeta',       coalesce(sum(o.total) filter (where o."paymentMethod" = 'tarjeta'), 0),
-      'otro',          coalesce(sum(o.total) filter (where o."paymentMethod" = 'otro'), 0),
-      'total',         coalesce(sum(o.total), 0),
-      'cantidad',      count(*)
+      'efectivo',      coalesce(sum(pg.amount) filter (where pg.method = 'efectivo'), 0),
+      'transferencia', coalesce(sum(pg.amount) filter (where pg.method = 'transferencia'), 0),
+      'tarjeta',       coalesce(sum(pg.amount) filter (where pg.method = 'tarjeta'), 0),
+      'otro',          coalesce(sum(pg.amount) filter (where pg.method = 'otro'), 0),
+      'total',         coalesce((select sum(o2.total) from "Order" o2
+                                  where o2."sessionId" = c.id and o2.status <> 'cancelado'), 0),
+      'cantidad',      (select count(*) from "Order" o3
+                         where o3."sessionId" = c.id and o3.status <> 'cancelado')
     )
-    from "Order" o
+    from "OrderPayment" pg
+    join "Order" o on o.id = pg."orderId"
     where o."sessionId" = c.id and o.status <> 'cancelado'
   ) as totales,
   coalesce((
@@ -126,15 +134,17 @@ export async function historialCajas(): Promise<CajaResumen[]> {
                 where o."sessionId" = c.id and o.status <> 'cancelado')      as ventas,
               (select coalesce(sum(o.total), 0)::int from "Order" o
                 where o."sessionId" = c.id and o.status <> 'cancelado')      as total,
-              (select coalesce(sum(o.total), 0)::int from "Order" o
+              (select coalesce(sum(pg.amount), 0)::int from "OrderPayment" pg
+                 join "Order" o on o.id = pg."orderId"
                 where o."sessionId" = c.id and o.status <> 'cancelado'
-                  and coalesce(o."paymentMethod",'efectivo') = 'efectivo')   as efectivo,
+                  and pg.method = 'efectivo')                                as efectivo,
               case when c."countedCash" is not null then
                 c."countedCash" - (
                   c."openingFloat"
-                  + (select coalesce(sum(o.total), 0)::int from "Order" o
+                  + (select coalesce(sum(pg.amount), 0)::int from "OrderPayment" pg
+                       join "Order" o on o.id = pg."orderId"
                       where o."sessionId" = c.id and o.status <> 'cancelado'
-                        and coalesce(o."paymentMethod",'efectivo') = 'efectivo')
+                        and pg.method = 'efectivo')
                   + (select coalesce(sum(m.amount), 0)::int from "CashMovement" m
                       where m."sessionId" = c.id and m.type = 'ingreso')
                   - (select coalesce(sum(m.amount), 0)::int from "CashMovement" m
@@ -200,18 +210,30 @@ export async function abrirCaja(fondo: number, nota: string) {
   }
 }
 
+type Renglon = {
+  producto_id: string | null;
+  nombre: string;
+  unidad_medida: string;
+  precio: number;
+  cantidad: number;
+};
+
 type EntradaCobro = {
   cajaId: string;
   nombre: string;
-  metodoPago: string;
   notas: string;
-  items: {
-    producto_id: string | null;
-    nombre: string;
-    unidad_medida: string;
-    precio: number;
-    cantidad: number;
-  }[];
+  recibido: number;
+  pagos: { metodo: string; monto: number }[];
+  items: Renglon[];
+};
+
+type EntradaDevolucion = {
+  cajaId: string;
+  pedidoId: string | null;
+  nombre: string;
+  notas: string;
+  metodoPago: string;
+  items: Renglon[];
 };
 
 /**
@@ -225,7 +247,7 @@ type EntradaCobro = {
 export async function cobrar(entrada: EntradaCobro) {
   await requerirSesion();
 
-  const parsed = cobroSchema.safeParse(entrada);
+  const parsed = cobroConPagosSchema.safeParse(entrada);
   if (!parsed.success) return falloDeValidacion(primerError(parsed.error));
   const d = parsed.data;
 
@@ -236,8 +258,9 @@ export async function cobrar(entrada: EntradaCobro) {
         JSON.stringify({
           caja_id: d.cajaId,
           nombre: d.nombre,
-          metodo_pago: d.metodoPago,
           notas: d.notas,
+          recibido: d.recibido,
+          pagos: d.pagos,
           items: d.items,
         }),
       ]
@@ -254,6 +277,48 @@ export async function cobrar(entrada: EntradaCobro) {
     };
   } catch (error) {
     return fallo(error, "caja:cobrar");
+  }
+}
+
+/**
+ * Registra una devolución.
+ *
+ * Es una venta al revés: la mercadería vuelve al stock y la plata sale del
+ * cajón. Se guarda en la misma tabla con importes negativos, así los informes
+ * y el arqueo la restan solos, sin ningún caso especial.
+ */
+export async function devolver(entrada: EntradaDevolucion) {
+  await requerirSesion();
+
+  const parsed = devolucionSchema.safeParse(entrada);
+  if (!parsed.success) return falloDeValidacion(primerError(parsed.error));
+  const d = parsed.data;
+
+  try {
+    const resultado = await consultarValor<{ numero: number; total: number }>(
+      `select devolver_mostrador($1::jsonb)`,
+      [
+        JSON.stringify({
+          caja_id: d.cajaId,
+          pedido_id: d.pedidoId,
+          nombre: d.nombre,
+          notas: d.notas,
+          metodo_pago: d.metodoPago,
+          items: d.items,
+        }),
+      ]
+    );
+
+    revalidarCaja();
+    await avisarATienda();
+
+    return {
+      success: true as const,
+      numero: Number(resultado?.numero ?? 0),
+      total: Number(resultado?.total ?? 0),
+    };
+  } catch (error) {
+    return fallo(error, "caja:devolver");
   }
 }
 

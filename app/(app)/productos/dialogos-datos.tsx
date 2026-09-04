@@ -15,8 +15,8 @@ import {
   type SkuPropuesto,
 } from "@/lib/actions/productos-actions";
 import { margen } from "@/lib/precios";
+import { money } from "@/lib/formato";
 
-const money = (n: number) => `$${Number(n).toLocaleString("es-AR", { maximumFractionDigits: 0 })}`;
 
 /**
  * Carga rápida de precios de costo.

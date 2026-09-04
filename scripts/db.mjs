@@ -62,6 +62,8 @@ const PIEZAS = `
     to_regprocedure('public.cambiar_estado_pedido(text,text)')        is not null as "función cambiar_estado_pedido",
     to_regprocedure('public.abrir_caja(int,text)')                    is not null as "función abrir_caja",
     to_regprocedure('public.cobrar_mostrador(jsonb)')                 is not null as "función cobrar_mostrador",
+    to_regprocedure('public.devolver_mostrador(jsonb)')               is not null as "función devolver_mostrador",
+    to_regprocedure('public.editar_pedido(text,jsonb)')               is not null as "función editar_pedido",
     to_regprocedure('public.mover_caja(text,text,int,text)')          is not null as "función mover_caja",
     to_regprocedure('public.cerrar_caja(text,int,text)')              is not null as "función cerrar_caja",
     to_regprocedure('public.metricas_stock()')                        is not null as "función metricas_stock",

@@ -390,3 +390,71 @@ export const movimientoCajaSchema = z.object({
   // indistinguible de un faltante cuando se mira el cierre a fin de mes.
   motivo: z.string().trim().min(1, "Escribí para qué fue").max(200),
 });
+
+// ─────────────────  Cobro con varios medios, y devoluciones  ─────────────────
+
+const rengloneCobro = z.object({
+  producto_id: z.string().trim().max(64).nullable().default(null),
+  nombre: z.string().trim().min(1, "Falta el nombre de un renglón").max(160),
+  unidad_medida: z.string().trim().max(24).default("unidad"),
+  precio: z.coerce.number().min(0).max(99_999_999).transform((n) => Math.round(n)),
+  cantidad: z.coerce
+    .number()
+    .int("La cantidad tiene que ser entera")
+    .min(1, "La cantidad tiene que ser al menos 1")
+    .max(1_000_000),
+});
+
+export const pagoSchema = z.object({
+  metodo: z.enum(METODOS_PAGO_VALIDOS),
+  monto: z.coerce
+    .number({ message: "El monto tiene que ser un número" })
+    .min(1, "Cada pago tiene que ser mayor a cero")
+    .max(99_999_999)
+    .transform((n) => Math.round(n)),
+});
+
+export const cobroConPagosSchema = z
+  .object({
+    cajaId: z.string().trim().min(1, "Caja inválida").max(64),
+    nombre: z.string().trim().max(160).default(""),
+    notas: z.string().trim().max(400).default(""),
+    /** Lo que entregó el cliente en efectivo, para calcular el vuelto. */
+    recibido: z.coerce.number().min(0).max(99_999_999).transform((n) => Math.round(n)).default(0),
+    pagos: z.array(pagoSchema).min(1, "Falta indicar cómo se pagó").max(4),
+    items: z
+      .array(rengloneCobro)
+      .min(1, "No hay nada para cobrar")
+      .max(MAX_RENGLONES_COBRO, `No se pueden cobrar más de ${MAX_RENGLONES_COBRO} renglones juntos`),
+  })
+  // Se valida acá además de en la base: así el error llega antes de tocar el
+  // stock, y con el número exacto que falta en vez de un mensaje del motor.
+  .refine((d) => totalDeCobro(d.items) === d.pagos.reduce((s, p) => s + p.monto, 0), {
+    message: "Lo cobrado no coincide con el total de la venta",
+    path: ["pagos"],
+  });
+
+export const devolucionSchema = z.object({
+  cajaId: z.string().trim().min(1, "Caja inválida").max(64),
+  /** La venta original, si se está devolviendo contra una. */
+  pedidoId: z.string().trim().max(64).nullable().default(null),
+  nombre: z.string().trim().max(160).default(""),
+  notas: z.string().trim().max(400).default(""),
+  metodoPago: z.enum(METODOS_PAGO_VALIDOS).default("efectivo"),
+  items: z.array(rengloneCobro).min(1, "No hay nada para devolver").max(MAX_RENGLONES_COBRO),
+});
+
+export const edicionPedidoSchema = z.object({
+  pedidoId: z.string().trim().min(1, "Pedido inválido").max(64),
+  nombre: z.string().trim().max(160).default(""),
+  notas: z.string().trim().max(1000).default(""),
+  items: z
+    .array(rengloneCobro)
+    .min(1, "El pedido tiene que tener al menos un renglón")
+    .max(MAX_RENGLONES_COBRO),
+});
+
+/** El vuelto. Nunca negativo: si entregó de menos, no hay vuelto que dar. */
+export function calcularVuelto(recibido: number, aPagarEnEfectivo: number): number {
+  return Math.max(0, Math.round(recibido) - Math.round(aPagarEnEfectivo));
+}

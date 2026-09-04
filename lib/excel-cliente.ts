@@ -450,6 +450,7 @@ export interface PedidoExportable {
   localidad: string | null;
   provincia: string | null;
   metodo_pago: string | null;
+  pagos: { metodo: string; monto: number }[];
   notas: string | null;
   total: number;
   created_at: Fecha;
@@ -466,6 +467,7 @@ const COLUMNAS_PEDIDOS: Columna[] = [
   { titulo: "Dirección", clave: "direccion", ancho: 30 },
   { titulo: "Localidad", clave: "localidad", ancho: 16 },
   { titulo: "Medio de pago", clave: "metodo_pago", ancho: 16 },
+  { titulo: "Detalle del pago", clave: "detalle_pago", ancho: 34 },
   { titulo: "Renglones", clave: "renglones", ancho: 11, formato: ENTERO, alinear: "right" },
   { titulo: "Unidades", clave: "unidades", ancho: 11, formato: ENTERO, alinear: "right" },
   { titulo: "Total", clave: "total", ancho: 14, formato: PESOS, alinear: "right" },
@@ -512,6 +514,14 @@ export async function construirLibroPedidos(pedidos: PedidoExportable[]): Promis
       direccion: p.direccion ?? "—",
       localidad: p.localidad ?? "—",
       metodo_pago: p.metodo_pago ? (ETIQUETA_MEDIO[p.metodo_pago] ?? p.metodo_pago) : "—",
+      // Con un solo medio la columna anterior ya lo dice; el detalle importa
+      // cuando la venta se pagó con varios.
+      detalle_pago:
+        p.pagos.length > 1
+          ? p.pagos
+              .map((g) => `${ETIQUETA_MEDIO[g.metodo] ?? g.metodo} ${g.monto.toLocaleString("es-AR")}`)
+              .join(" + ")
+          : "",
       renglones: p.items.length,
       unidades,
       total: p.total,

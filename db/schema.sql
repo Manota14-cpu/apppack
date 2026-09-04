@@ -402,6 +402,9 @@ $$;
 -- stock— pero en una sola operación: si un renglón no tiene stock, no queda
 -- media venta cobrada. Antes esto se cargaba como "salida" a mano, sin precio
 -- ni cliente, así que la plata no figuraba en ningún informe.
+-- `p.pagos` es una lista de {metodo, monto}. Una venta puede pagarse con más
+-- de un medio —"mitad efectivo, mitad transferencia" es lo habitual en el
+-- mostrador— y con una sola columna había que elegir cuál mentir.
 create or replace function cobrar_mostrador(p jsonb)
 returns jsonb
 language plpgsql
@@ -411,6 +414,9 @@ declare
   v_id      text;
   v_numero  int;
   v_total   bigint := 0;
+  v_pagado  bigint := 0;
+  v_medios  int;
+  v_etiqueta text;
   r         jsonb;
 begin
   if not exists (select 1 from "CashSession" where id = v_caja and status = 'abierta') then
@@ -425,19 +431,45 @@ begin
     v_total := v_total + ((r->>'precio')::bigint * (r->>'cantidad')::bigint);
   end loop;
 
+  select coalesce(sum((x->>'monto')::bigint), 0), count(*)
+    into v_pagado, v_medios
+    from jsonb_array_elements(coalesce(p->'pagos', '[]'::jsonb)) x;
+
+  if v_medios = 0 then
+    raise exception 'Falta indicar cómo se pagó.' using errcode = 'P0001';
+  end if;
+  -- Lo cobrado tiene que ser exactamente el total: si no, el arqueo de cierre
+  -- arrastraría una diferencia que nadie va a poder explicar mañana.
+  if v_pagado <> v_total then
+    raise exception 'Lo cobrado (%) no coincide con el total de la venta (%).', v_pagado, v_total
+      using errcode = 'P0001';
+  end if;
+
+  select case when count(distinct x->>'metodo') = 1
+              then min(x->>'metodo') else 'mixto' end
+    into v_etiqueta
+    from jsonb_array_elements(p->'pagos') x;
+
   select coalesce(max(number), 0) + 1 into v_numero from "Order";
 
   insert into "Order" (
-    id, number, channel, status, nombre, total, "paymentMethod", "sessionId", notas, "createdAt"
+    id, number, channel, status, nombre, total, "paymentMethod", "cashReceived",
+    "sessionId", notas, "createdAt"
   ) values (
     (gen_random_uuid())::text, v_numero, 'mostrador', 'entregado',
     coalesce(nullif(p->>'nombre', ''), 'Mostrador'),
     v_total,
-    coalesce(nullif(p->>'metodo_pago', ''), 'efectivo'),
+    v_etiqueta,
+    nullif((p->>'recibido')::int, 0),
     v_caja,
     nullif(p->>'notas', ''),
     now()
   ) returning id into v_id;
+
+  for r in select * from jsonb_array_elements(p->'pagos') loop
+    insert into "OrderPayment" ("orderId", method, amount)
+    values (v_id, r->>'metodo', (r->>'monto')::int);
+  end loop;
 
   for r in select * from jsonb_array_elements(p->'items') loop
     insert into "OrderItem" (id, "orderId", "productId", name, unit, price, quantity)
@@ -457,6 +489,88 @@ begin
         -((r->>'cantidad')::int),
         'Venta mostrador #' || v_numero,
         'venta'
+      );
+    end if;
+  end loop;
+
+  return jsonb_build_object('id', v_id, 'numero', v_numero, 'total', v_total);
+end;
+$$;
+
+-- ---------------------------------------------------------------------
+-- Devoluciones
+-- ---------------------------------------------------------------------
+-- Una devolución es una venta al revés, y se guarda como tal: cantidades e
+-- importes negativos sobre la misma tabla. Así toda suma que ya existía
+-- —informes, arqueo, totales del Excel— le da el signo correcto sin que
+-- ninguna consulta tenga que acordarse de un caso especial.
+create or replace function devolver_mostrador(p jsonb)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_caja   text := p->>'caja_id';
+  v_id     text;
+  v_numero int;
+  v_total  bigint := 0;
+  v_origen int;
+  r        jsonb;
+begin
+  if not exists (select 1 from "CashSession" where id = v_caja and status = 'abierta') then
+    raise exception 'La caja no está abierta.' using errcode = 'P0001';
+  end if;
+
+  if jsonb_array_length(coalesce(p->'items', '[]'::jsonb)) = 0 then
+    raise exception 'No hay nada para devolver.' using errcode = 'P0001';
+  end if;
+
+  for r in select * from jsonb_array_elements(p->'items') loop
+    if (r->>'cantidad')::int <= 0 then
+      raise exception 'La cantidad a devolver tiene que ser mayor a cero.' using errcode = 'P0001';
+    end if;
+    v_total := v_total + ((r->>'precio')::bigint * (r->>'cantidad')::bigint);
+  end loop;
+
+  select number into v_origen from "Order" where id = nullif(p->>'pedido_id', '');
+  select coalesce(max(number), 0) + 1 into v_numero from "Order";
+
+  insert into "Order" (
+    id, number, channel, status, nombre, total, "paymentMethod",
+    "sessionId", notas, "createdAt"
+  ) values (
+    (gen_random_uuid())::text, v_numero, 'devolucion', 'entregado',
+    coalesce(nullif(p->>'nombre', ''), 'Devolución'),
+    -v_total,
+    coalesce(nullif(p->>'metodo_pago', ''), 'efectivo'),
+    v_caja,
+    nullif(
+      trim(coalesce(p->>'notas', '') ||
+           case when v_origen is not null then ' (de la venta #' || v_origen || ')' else '' end),
+      ''),
+    now()
+  ) returning id into v_id;
+
+  insert into "OrderPayment" ("orderId", method, amount)
+  values (v_id, coalesce(nullif(p->>'metodo_pago', ''), 'efectivo'), -v_total);
+
+  for r in select * from jsonb_array_elements(p->'items') loop
+    insert into "OrderItem" (id, "orderId", "productId", name, unit, price, quantity)
+    values (
+      (gen_random_uuid())::text, v_id,
+      nullif(r->>'producto_id', ''),
+      r->>'nombre',
+      coalesce(nullif(r->>'unidad_medida', ''), 'unidad'),
+      (r->>'precio')::int,
+      -((r->>'cantidad')::int)
+    );
+
+    -- La mercadería vuelve a la estantería, con su movimiento.
+    if nullif(r->>'producto_id', '') is not null then
+      perform ajustar_stock(
+        r->>'producto_id',
+        (r->>'cantidad')::int,
+        'Devolución #' || v_numero,
+        'devolucion'
       );
     end if;
   end loop;
@@ -520,7 +634,15 @@ begin
     raise exception 'Esta caja ya está cerrada.' using errcode = 'P0001';
   end if;
 
-  select coalesce(sum(total) filter (where coalesce("paymentMethod", 'efectivo') = 'efectivo'), 0),
+  -- El efectivo sale de los pagos, no de `Order.paymentMethod`: en una venta
+  -- pagada mitad y mitad, esa columna dice "mixto" y el cajón solo recibió la
+  -- parte en efectivo. Las devoluciones vienen con importe negativo, así que
+  -- restan solas.
+  select coalesce((
+           select sum(pg.amount) from "OrderPayment" pg
+             join "Order" o2 on o2.id = pg."orderId"
+            where o2."sessionId" = p_caja_id and o2.status <> 'cancelado'
+              and pg.method = 'efectivo'), 0),
          coalesce(sum(total), 0)
     into v_efectivo, v_total
     from "Order"
@@ -553,6 +675,92 @@ begin
     'contado', greatest(coalesce(p_contado, 0), 0),
     'diferencia', greatest(coalesce(p_contado, 0), 0) - v_esperado
   );
+end;
+$$;
+
+-- ---------------------------------------------------------------------
+-- Edición de un pedido
+-- ---------------------------------------------------------------------
+-- Reemplaza los renglones y reconcilia el stock por diferencia: lo que se
+-- agregó sale del depósito, lo que se quitó vuelve. Se hace comparando el
+-- antes contra el después en vez de aplicar cambios de a uno, porque cambiar
+-- una cantidad y mover un producto a otro renglón son la misma operación
+-- vistas de cerca, y tratarlas por separado deja huecos.
+--
+-- Un pedido cancelado no se edita: su stock ya volvió, y tocar los renglones
+-- lo descontaría de nuevo.
+create or replace function editar_pedido(p_id text, p jsonb)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_numero int;
+  v_estado text;
+  v_total  bigint := 0;
+  r        record;
+  it       jsonb;
+begin
+  select number, status into v_numero, v_estado
+  from "Order" where id = p_id
+  for update;
+
+  if v_numero is null then
+    raise exception 'El pedido no existe.';
+  end if;
+  if v_estado = 'cancelado' then
+    raise exception 'Un pedido cancelado no se puede editar. Reabrilo primero.'
+      using errcode = 'P0001';
+  end if;
+  if jsonb_array_length(coalesce(p->'items', '[]'::jsonb)) = 0 then
+    raise exception 'El pedido tiene que tener al menos un renglón.' using errcode = 'P0001';
+  end if;
+
+  create temporary table if not exists _nuevos (
+    producto_id text, nombre text, unidad text, precio int, cantidad int
+  ) on commit drop;
+  delete from _nuevos;
+
+  for it in select * from jsonb_array_elements(p->'items') loop
+    insert into _nuevos values (
+      nullif(it->>'producto_id', ''),
+      it->>'nombre',
+      coalesce(nullif(it->>'unidad_medida', ''), 'unidad'),
+      (it->>'precio')::int,
+      (it->>'cantidad')::int
+    );
+    v_total := v_total + ((it->>'precio')::bigint * (it->>'cantidad')::bigint);
+  end loop;
+
+  -- Diferencia por producto entre lo que había y lo que queda.
+  for r in
+    select coalesce(a.pid, n.producto_id) as pid,
+           coalesce(n.cant, 0) - coalesce(a.cant, 0) as delta
+      from (select "productId" as pid, sum(quantity)::int as cant
+              from "OrderItem" where "orderId" = p_id and "productId" is not null
+             group by "productId") a
+      full outer join (select producto_id, sum(cantidad)::int as cant
+              from _nuevos where producto_id is not null
+             group by producto_id) n on n.producto_id = a.pid
+  loop
+    if r.pid is not null and r.delta <> 0 then
+      -- Más cantidad en el pedido significa menos en la estantería.
+      perform ajustar_stock(r.pid, -r.delta, 'Edición del pedido #' || v_numero,
+                            case when r.delta > 0 then 'venta' else 'devolucion' end);
+    end if;
+  end loop;
+
+  delete from "OrderItem" where "orderId" = p_id;
+  insert into "OrderItem" (id, "orderId", "productId", name, unit, price, quantity)
+  select (gen_random_uuid())::text, p_id, producto_id, nombre, unidad, precio, cantidad
+    from _nuevos;
+
+  update "Order"
+     set total = v_total,
+         nombre = coalesce(nullif(p->>'nombre', ''), nombre),
+         notas = nullif(p->>'notas', '')
+   where id = p_id;
+
+  return jsonb_build_object('numero', v_numero, 'total', v_total);
 end;
 $$;
 
@@ -623,3 +831,17 @@ select p.id, 'creacion', p."stockAvailable", p."stockAvailable",
        'Stock inicial al vincular con AppPack', now()
   from "Product" p
  where not exists (select 1 from "StockMovement" m where m."productId" = p.id);
+
+-- ---------------------------------------------------------------------
+-- Backfill: las ventas anteriores al desglose de pagos.
+-- ---------------------------------------------------------------------
+-- Antes, el medio de pago era una sola columna. Ahora los totales por medio
+-- —y el efectivo del arqueo— salen de "OrderPayment", así que una venta vieja
+-- sin su fila de pago desaparecería del desglose y su efectivo contaría cero.
+-- Se les crea el pago que les corresponde, con el importe entero.
+insert into "OrderPayment" ("orderId", method, amount)
+select o.id, coalesce(o."paymentMethod", 'efectivo'), o.total
+  from "Order" o
+ where o."paymentMethod" is not null
+   and o."paymentMethod" <> 'mixto'
+   and not exists (select 1 from "OrderPayment" p where p."orderId" = o.id);

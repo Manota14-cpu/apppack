@@ -147,8 +147,12 @@ export interface Pedido {
   provincia: string | null;
   notas: string | null;
   total: number;
-  /** Medio de pago. Solo en ventas de mostrador. */
+  /** Etiqueta del medio de pago, o «mixto». Solo en ventas de mostrador. */
   metodo_pago: string | null;
+  /** El desglose real del cobro. */
+  pagos: PagoPedido[];
+  /** Cuánto entregó el cliente en efectivo, para reimprimir el vuelto. */
+  recibido: number | null;
   /** Turno de caja en el que se cobró, si fue por mostrador. */
   caja_id: string | null;
   created_at: Fecha;
@@ -178,13 +182,23 @@ export const ETIQUETA_PAGO: Record<string, string> = {
   transferencia: "Transferencia",
   tarjeta: "Tarjeta",
   otro: "Otro",
+  // No es un medio de pago: es la etiqueta de una venta pagada con varios.
+  mixto: "Mixto",
 };
+
+/** Un tramo del cobro. Negativo en una devolución. */
+export interface PagoPedido {
+  metodo: string;
+  monto: number;
+}
 
 export interface VentaCaja {
   id: string;
   numero: number;
   nombre: string;
   total: number;
+  /** whatsapp | mostrador | devolucion */
+  canal: string;
   metodo_pago: string;
   notas: string | null;
   created_at: Fecha;

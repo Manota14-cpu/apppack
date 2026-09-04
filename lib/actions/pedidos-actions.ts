@@ -2,11 +2,11 @@
 
 import { revalidatePath } from "next/cache";
 import { requerirSesion } from "@/lib/guard";
-import { consultar, consultarUna, ejecutar } from "@/lib/db";
+import { consultar, consultarUna, consultarValor, ejecutar } from "@/lib/db";
 import { fallo, falloDeValidacion } from "@/lib/errors";
 import { CAMPOS_PEDIDO } from "@/lib/sql";
 import { avisarATienda } from "@/lib/revalidar-tienda";
-import { estadoPedidoSchema } from "@/lib/validation";
+import { edicionPedidoSchema, estadoPedidoSchema, primerError } from "@/lib/validation";
 import type { Pedido } from "@/types/database.types";
 
 function revalidarPedidos() {
@@ -116,5 +116,49 @@ export async function eliminarPedido(pedidoId: string) {
     return { success: true as const, numero: pedido.numero };
   } catch (error) {
     return fallo(error, "pedidos:eliminar");
+  }
+}
+
+/**
+ * Reemplaza los renglones de un pedido.
+ *
+ * El stock se reconcilia por diferencia dentro de la base: lo que se agregó
+ * sale del depósito, lo que se quitó vuelve, y cada movimiento queda anotado
+ * como «Edición del pedido #N». Corregir una cantidad sin eso dejaría el stock
+ * mintiendo, que es exactamente el problema que la app existe para evitar.
+ */
+export async function editarPedido(entrada: {
+  pedidoId: string;
+  nombre: string;
+  notas: string;
+  items: {
+    producto_id: string | null;
+    nombre: string;
+    unidad_medida: string;
+    precio: number;
+    cantidad: number;
+  }[];
+}) {
+  await requerirSesion();
+
+  const parsed = edicionPedidoSchema.safeParse(entrada);
+  if (!parsed.success) return falloDeValidacion(primerError(parsed.error));
+  const d = parsed.data;
+
+  try {
+    const resultado = await consultarValor<{ numero: number; total: number }>(
+      `select editar_pedido($1, $2::jsonb)`,
+      [d.pedidoId, JSON.stringify({ nombre: d.nombre, notas: d.notas, items: d.items })]
+    );
+
+    revalidarPedidos();
+    await avisarATienda();
+    return {
+      success: true as const,
+      numero: Number(resultado?.numero ?? 0),
+      total: Number(resultado?.total ?? 0),
+    };
+  } catch (error) {
+    return fallo(error, "pedidos:editar");
   }
 }

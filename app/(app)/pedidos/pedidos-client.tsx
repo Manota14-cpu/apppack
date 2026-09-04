@@ -10,6 +10,7 @@ import {
   FileText,
   MapPin,
   MessageCircle,
+  Pencil,
   Phone,
   Printer,
   Trash2,
@@ -28,9 +29,10 @@ import {
   guardarNotaPedido,
 } from "@/lib/actions/pedidos-actions";
 import { descargarPedidos } from "@/lib/excel-cliente";
+import { money } from "@/lib/formato";
+import { EditarPedidoDialog } from "./editar-dialog";
 import { ESTADOS_PEDIDO, ETIQUETA_PAGO, type Fecha, type Pedido } from "@/types/database.types";
 
-const money = (n: number) => `$${Number(n).toLocaleString("es-AR", { maximumFractionDigits: 0 })}`;
 
 const fechaHora = (valor: Fecha) =>
   new Date(valor).toLocaleString("es-AR", {
@@ -82,6 +84,7 @@ export function PedidosClient({ pedidos, total, pagina, pageSize, resumen, filtr
   const [abierto, setAbierto] = useState<string | null>(null);
   const [aCancelar, setACancelar] = useState<Pedido | null>(null);
   const [aEliminar, setAEliminar] = useState<Pedido | null>(null);
+  const [aEditar, setAEditar] = useState<Pedido | null>(null);
   const [ocupado, setOcupado] = useState<string | null>(null);
   const [descargando, setDescargando] = useState(false);
 
@@ -99,6 +102,7 @@ export function PedidosClient({ pedidos, total, pagina, pageSize, resumen, filtr
           localidad: p.localidad,
           provincia: p.provincia,
           metodo_pago: p.metodo_pago,
+          pagos: p.pagos,
           notas: p.notas,
           total: p.total,
           created_at: p.created_at,
@@ -401,6 +405,14 @@ export function PedidosClient({ pedidos, total, pagina, pageSize, resumen, filtr
                         <Printer className="h-4 w-4" aria-hidden="true" />
                         Comprobante
                       </a>
+                      {/* Un pedido cancelado ya devolvió su stock: editarlo
+                          volvería a descontarlo. */}
+                      {p.estado !== "cancelado" && (
+                        <Button variant="ghost" onClick={() => setAEditar(p)}>
+                          <Pencil className="h-4 w-4" />
+                          Editar
+                        </Button>
+                      )}
                       <Button
                         variant="ghost"
                         className="ml-auto text-destructive hover:text-destructive"
@@ -420,6 +432,15 @@ export function PedidosClient({ pedidos, total, pagina, pageSize, resumen, filtr
       )}
 
       <PaginationLinks total={total} page={pagina} pageSize={pageSize} />
+
+      {aEditar && (
+        <EditarPedidoDialog
+          key={aEditar.id}
+          pedido={aEditar}
+          onOpenChange={(o) => !o && setAEditar(null)}
+          onListo={() => startTransition(() => router.refresh())}
+        />
+      )}
 
       <ConfirmDialog
         open={aEliminar !== null}

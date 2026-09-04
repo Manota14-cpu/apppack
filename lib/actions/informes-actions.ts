@@ -24,7 +24,7 @@ export async function obtenerInforme(dias: number): Promise<Informe> {
   // `0` significa «todo»: se usa una fecha imposible de superar hacia atrás.
   const desde = d === 0 ? "1970-01-01" : new Date(Date.now() - d * 86_400_000).toISOString();
 
-  const [resumen, porProducto, inmovilizado, movimientos] = await Promise.all([
+  const [resumen, porProducto, inmovilizado, movimientos, porCanal] = await Promise.all([
     consultarUna<{
       pedidos: number;
       unidades: number;
@@ -114,6 +114,16 @@ export async function obtenerInforme(dias: number): Promise<Informe> {
         group by type order by sum(quantity) desc`,
       [desde]
     ),
+
+    consultar<{ canal: string; pedidos: number; ingreso: number }>(
+      `select channel as canal, count(*)::int as pedidos,
+              coalesce(sum(total), 0)::bigint as ingreso
+         from "Order"
+        where status <> 'cancelado' and "createdAt" >= $1::timestamptz
+        group by channel
+        order by sum(total) desc`,
+      [desde]
+    ),
   ]);
 
   const ingreso = Number(resumen?.ingreso ?? 0);
@@ -143,5 +153,6 @@ export async function obtenerInforme(dias: number): Promise<Informe> {
     movimientos,
     salidasSinPrecio: resumen?.salidas_sin_precio ?? 0,
     ventasConCostoDudoso: resumen?.costo_dudoso ?? 0,
+    porCanal: porCanal.map((c) => ({ ...c, ingreso: Number(c.ingreso) })),
   };
 }

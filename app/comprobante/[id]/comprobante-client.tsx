@@ -3,8 +3,8 @@
 import { useEffect } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ETIQUETA_PAGO, type Pedido } from "@/types/database.types";
+import { money } from "@/lib/formato";
 
-const money = (n: number) => `$${Number(n).toLocaleString("es-AR", { maximumFractionDigits: 0 })}`;
 
 const fechaHora = (valor: string | Date) =>
   new Date(valor).toLocaleString("es-AR", {
@@ -39,6 +39,9 @@ export function ComprobanteImprimible({ pedido }: { pedido: Pedido }) {
   }, [imprimirSolo]);
 
   const unidades = pedido.items.reduce((s, i) => s + i.cantidad, 0);
+  const efectivoDelTicket = pedido.pagos
+    .filter((p) => p.metodo === "efectivo")
+    .reduce((s, p) => s + p.monto, 0);
 
   return (
     <>
@@ -105,10 +108,10 @@ export function ComprobanteImprimible({ pedido }: { pedido: Pedido }) {
             <span>{pedido.nombre}</span>
           </div>
         )}
-        {pedido.metodo_pago && (
+        {pedido.pagos.length === 1 && pedido.pagos[0] && (
           <div className="fila">
             <span>Pago</span>
-            <span>{ETIQUETA_PAGO[pedido.metodo_pago] ?? pedido.metodo_pago}</span>
+            <span>{ETIQUETA_PAGO[pedido.pagos[0].metodo] ?? pedido.pagos[0].metodo}</span>
           </div>
         )}
 
@@ -140,6 +143,33 @@ export function ComprobanteImprimible({ pedido }: { pedido: Pedido }) {
           <span>TOTAL</span>
           <span>{money(pedido.total)}</span>
         </div>
+
+        {/* Con más de un medio, el detalle es lo que el cliente revisa. */}
+        {pedido.pagos.length > 1 && (
+          <>
+            <div className="sep" />
+            {pedido.pagos.map((pago, i) => (
+              <div className="fila" key={i}>
+                <span className="detalle">{ETIQUETA_PAGO[pago.metodo] ?? pago.metodo}</span>
+                <span>{money(pago.monto)}</span>
+              </div>
+            ))}
+          </>
+        )}
+
+        {pedido.recibido !== null && pedido.recibido > 0 && (
+          <>
+            <div className="sep" />
+            <div className="fila">
+              <span className="detalle">Paga con</span>
+              <span>{money(pedido.recibido)}</span>
+            </div>
+            <div className="fila">
+              <span className="detalle">Vuelto</span>
+              <span>{money(Math.max(0, pedido.recibido - efectivoDelTicket))}</span>
+            </div>
+          </>
+        )}
 
         {pedido.notas && (
           <>

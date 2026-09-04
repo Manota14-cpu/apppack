@@ -8,8 +8,8 @@ import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { PERIODOS, etiquetaPeriodo, type Informe } from "@/lib/informes";
+import { money } from "@/lib/formato";
 
-const money = (n: number) => `$${Number(n).toLocaleString("es-AR", { maximumFractionDigits: 0 })}`;
 const num = (n: number) => Number(n).toLocaleString("es-AR");
 
 const ETIQUETA_MOVIMIENTO: Record<string, string> = {
@@ -17,6 +17,13 @@ const ETIQUETA_MOVIMIENTO: Record<string, string> = {
   salida: "Salidas",
   venta: "Vendido",
   ajuste: "Ajustes",
+  devolucion: "Devuelto",
+};
+
+const ETIQUETA_CANAL: Record<string, string> = {
+  mostrador: "Mostrador",
+  whatsapp: "Tienda web",
+  devolucion: "Devoluciones",
 };
 
 export function InformesClient({ informe }: { informe: Informe }) {
@@ -149,6 +156,36 @@ export function InformesClient({ informe }: { informe: Informe }) {
           </ul>
         )}
       </section>
+
+      {/* ── De dónde vino la plata ── */}
+      {informe.porCanal.length > 1 && (
+        <section className="space-y-3">
+          <h2 className="text-body font-semibold">De dónde vino</h2>
+          <ul className="divide-y divide-border rounded-xl border border-border">
+            {informe.porCanal.map((c) => {
+              const parte =
+                ventas.ingreso > 0 ? Math.round((c.ingreso / ventas.ingreso) * 100) : 0;
+              return (
+                <li key={c.canal} className="flex flex-wrap items-center gap-x-4 gap-y-1 px-3 py-2.5">
+                  <span className="min-w-0 flex-1 text-caption font-medium">
+                    {ETIQUETA_CANAL[c.canal] ?? c.canal}
+                  </span>
+                  <span className="text-caption text-muted-foreground">
+                    {num(c.pedidos)} {c.pedidos === 1 ? "venta" : "ventas"}
+                  </span>
+                  {parte > 0 && <Badge variant="outline">{parte}%</Badge>}
+                  <span className="font-mono-num text-caption font-semibold">
+                    {money(c.ingreso)}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+          <p className="text-caption text-muted-foreground">
+            Las devoluciones figuran en negativo, así que restan del canal por el que salieron.
+          </p>
+        </section>
+      )}
 
       {/* ── Movimientos de stock ── */}
       {informe.movimientos.length > 0 && (

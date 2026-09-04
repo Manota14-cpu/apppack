@@ -67,4 +67,12 @@ export interface Informe {
    * fuera un hallazgo.
    */
   ventasConCostoDudoso: number;
+  /**
+   * Cuánto trajo cada canal.
+   *
+   * Desde que existe la caja hay dos formas de vender, y sin separarlas no se
+   * puede saber cuál sostiene el negocio. Las devoluciones vienen con importe
+   * negativo, así que restan del canal que corresponda.
+   */
+  porCanal: { canal: string; pedidos: number; ingreso: number }[];
 }

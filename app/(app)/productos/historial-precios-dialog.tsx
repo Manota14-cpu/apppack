@@ -6,9 +6,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Skeleton } from "@/components/ui/skeleton";
 import { historialPrecios } from "@/lib/actions/productos-actions";
 import { margen } from "@/lib/precios";
+import { money } from "@/lib/formato";
 import type { CambioPrecio, Fecha, ProductoConCategoria } from "@/types/database.types";
 
-const money = (n: number) => `$${Number(n).toLocaleString("es-AR", { maximumFractionDigits: 0 })}`;
 
 const fecha = (valor: Fecha) =>
   new Date(valor).toLocaleDateString("es-AR", { day: "2-digit", month: "short", year: "numeric" });
