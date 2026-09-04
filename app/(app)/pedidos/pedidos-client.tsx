@@ -6,25 +6,33 @@ import {
   ChevronDown,
   ChevronRight,
   ClipboardList,
+  Download,
   FileText,
   MapPin,
   MessageCircle,
   Phone,
+  Trash2,
 } from "lucide-react";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
 import { Label } from "@/components/ui/label";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { PaginationLinks } from "@/components/ui/pagination";
 import { ConfirmDialog } from "@/components/ui/confirm-dialog";
-import { cambiarEstadoPedido, guardarNotaPedido } from "@/lib/actions/pedidos-actions";
-import { ESTADOS_PEDIDO, type Pedido } from "@/types/database.types";
+import {
+  cambiarEstadoPedido,
+  eliminarPedido,
+  guardarNotaPedido,
+} from "@/lib/actions/pedidos-actions";
+import { descargarPedidos } from "@/lib/excel-cliente";
+import { ESTADOS_PEDIDO, ETIQUETA_PAGO, type Fecha, type Pedido } from "@/types/database.types";
 
 const money = (n: number) => `$${Number(n).toLocaleString("es-AR", { maximumFractionDigits: 0 })}`;
 
-const fechaHora = (iso: string) =>
-  new Date(iso).toLocaleString("es-AR", {
+const fechaHora = (valor: Fecha) =>
+  new Date(valor).toLocaleString("es-AR", {
     day: "2-digit",
     month: "2-digit",
     hour: "2-digit",
@@ -72,7 +80,65 @@ export function PedidosClient({ pedidos, total, pagina, pageSize, resumen, filtr
 
   const [abierto, setAbierto] = useState<string | null>(null);
   const [aCancelar, setACancelar] = useState<Pedido | null>(null);
+  const [aEliminar, setAEliminar] = useState<Pedido | null>(null);
   const [ocupado, setOcupado] = useState<string | null>(null);
+  const [descargando, setDescargando] = useState(false);
+
+  async function descargar() {
+    setDescargando(true);
+    try {
+      await descargarPedidos(
+        pedidos.map((p) => ({
+          numero: p.numero,
+          estado: p.estado,
+          canal: p.canal,
+          nombre: p.nombre,
+          telefono: p.telefono,
+          direccion: p.direccion,
+          localidad: p.localidad,
+          provincia: p.provincia,
+          metodo_pago: p.metodo_pago,
+          notas: p.notas,
+          total: p.total,
+          created_at: p.created_at,
+          items: p.items.map((i) => ({
+            nombre: i.nombre,
+            unidad_medida: i.unidad_medida,
+            precio: i.precio,
+            cantidad: i.cantidad,
+          })),
+        })),
+        filtroEstado === "todos" ? "" : filtroEstado
+      );
+      toast.success("Pedidos descargados", {
+        description:
+          filtroEstado === "todos"
+            ? "Se descargó lo que estás viendo en esta página."
+            : `Solo los pedidos en estado «${ETIQUETA[filtroEstado] ?? filtroEstado}» de esta página.`,
+      });
+    } catch (err) {
+      toast.error(err instanceof Error ? err.message : "No se pudo descargar");
+    } finally {
+      setDescargando(false);
+    }
+  }
+
+  async function confirmarEliminacion() {
+    if (!aEliminar) return;
+    const pedido = aEliminar;
+    setAEliminar(null);
+    setOcupado(pedido.id);
+    try {
+      const r = await eliminarPedido(pedido.id);
+      if (!r.success) return void toast.error(r.error);
+      toast.success(`Pedido #${r.numero} eliminado`, {
+        description: "Si tenía stock descontado, volvió al catálogo.",
+      });
+      startTransition(() => router.refresh());
+    } finally {
+      setOcupado(null);
+    }
+  }
 
   function filtrar(estado: string) {
     const params = new URLSearchParams(searchParams.toString());
@@ -142,6 +208,16 @@ export function PedidosClient({ pedidos, total, pagina, pageSize, resumen, filtr
               : `${total.toLocaleString("es-AR")} ${total === 1 ? "pedido" : "pedidos"} en total`}
           </p>
         </div>
+        <div className="flex flex-wrap items-center gap-2">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={descargar}
+          disabled={descargando || pedidos.length === 0}
+        >
+          <Download className="h-4 w-4" />
+          {descargando ? "Generando…" : "Descargar"}
+        </Button>
         <Select value={filtroEstado} onValueChange={filtrar}>
           <SelectTrigger className="w-[170px]" aria-label="Filtrar por estado">
             <SelectValue />
@@ -156,6 +232,7 @@ export function PedidosClient({ pedidos, total, pagina, pageSize, resumen, filtr
             ))}
           </SelectContent>
         </Select>
+        </div>
       </div>
 
       {pedidos.length === 0 ? (
@@ -203,7 +280,8 @@ export function PedidosClient({ pedidos, total, pagina, pageSize, resumen, filtr
                         </Badge>
                       </span>
                       <span className="mt-0.5 block text-caption text-muted-foreground">
-                        {fechaHora(p.created_at)} · {p.localidad} · {p.items.length}{" "}
+                        {[fechaHora(p.created_at), p.localidad].filter(Boolean).join(" · ")} ·{" "}
+                        {p.items.length}{" "}
                         {p.items.length === 1 ? "renglón" : "renglones"}, {unidades}{" "}
                         {unidades === 1 ? "unidad" : "unidades"}
                       </span>
@@ -252,18 +330,27 @@ export function PedidosClient({ pedidos, total, pagina, pageSize, resumen, filtr
 
                     <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                       <div className="space-y-1.5 text-caption">
-                        <p className="flex items-start gap-2">
-                          <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                          <span>
-                            {p.direccion}, {p.localidad}, {p.provincia}
-                          </span>
-                        </p>
-                        <p className="flex items-center gap-2">
-                          <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
-                          <a href={`tel:${p.telefono}`} className="hover:underline">
-                            {p.telefono}
-                          </a>
-                        </p>
+                        {p.direccion && (
+                          <p className="flex items-start gap-2">
+                            <MapPin className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                            <span>
+                              {[p.direccion, p.localidad, p.provincia].filter(Boolean).join(", ")}
+                            </span>
+                          </p>
+                        )}
+                        {p.telefono && (
+                          <p className="flex items-center gap-2">
+                            <Phone className="h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
+                            <a href={`tel:${p.telefono}`} className="hover:underline">
+                              {p.telefono}
+                            </a>
+                          </p>
+                        )}
+                        {p.metodo_pago && (
+                          <p className="text-muted-foreground">
+                            Cobrado por {ETIQUETA_PAGO[p.metodo_pago] ?? p.metodo_pago}
+                          </p>
+                        )}
                         {p.requiere_factura && (
                           <p className="flex items-start gap-2">
                             <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 text-muted-foreground" aria-hidden="true" />
@@ -292,15 +379,28 @@ export function PedidosClient({ pedidos, total, pagina, pageSize, resumen, filtr
                       </div>
                     </div>
 
-                    <a
-                      href={linkWhatsApp(p.telefono, p.numero, p.nombre)}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="inline-flex h-10 items-center gap-2 rounded-xl border border-border px-4 text-caption font-medium transition-colors hover:bg-white/[0.04]"
-                    >
-                      <MessageCircle className="h-4 w-4" aria-hidden="true" />
-                      Escribirle por WhatsApp
-                    </a>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {p.telefono && (
+                        <a
+                          href={linkWhatsApp(p.telefono, p.numero, p.nombre)}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex h-10 items-center gap-2 rounded-xl border border-border px-4 text-caption font-medium transition-colors hover:bg-white/[0.04]"
+                        >
+                          <MessageCircle className="h-4 w-4" aria-hidden="true" />
+                          Escribirle por WhatsApp
+                        </a>
+                      )}
+                      <Button
+                        variant="ghost"
+                        className="ml-auto text-destructive hover:text-destructive"
+                        onClick={() => setAEliminar(p)}
+                        disabled={ocupado === p.id}
+                      >
+                        <Trash2 className="h-4 w-4" />
+                        Eliminar
+                      </Button>
+                    </div>
                   </div>
                 )}
               </li>
@@ -310,6 +410,24 @@ export function PedidosClient({ pedidos, total, pagina, pageSize, resumen, filtr
       )}
 
       <PaginationLinks total={total} page={pagina} pageSize={pageSize} />
+
+      <ConfirmDialog
+        open={aEliminar !== null}
+        onOpenChange={(o) => !o && setAEliminar(null)}
+        titulo="¿Eliminar el pedido para siempre?"
+        descripcion={
+          aEliminar
+            ? `El pedido #${aEliminar.numero} desaparece del historial y deja de figurar en los informes. ${
+                aEliminar.estado === "cancelado"
+                  ? "Ya estaba cancelado, así que el stock no cambia."
+                  : `Las ${aEliminar.items.reduce((s, i) => s + i.cantidad, 0)} unidades vuelven al stock antes de borrarlo.`
+              } Si solo querés dejar de contarlo, cancelalo: eso conserva la historia.`
+            : ""
+        }
+        confirmar="Eliminar para siempre"
+        onConfirm={confirmarEliminacion}
+        destructivo
+      />
 
       <ConfirmDialog
         open={aCancelar !== null}

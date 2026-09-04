@@ -38,7 +38,7 @@ function revalidarTodo() {
   revalidatePath("/dashboard");
   revalidatePath("/informes");
   revalidatePath("/pedidos");
-  revalidatePath("/recuentos");
+  revalidatePath("/caja");
   revalidatePath("/configuracion");
 }
 

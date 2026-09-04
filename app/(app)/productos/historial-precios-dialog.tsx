@@ -6,12 +6,12 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } f
 import { Skeleton } from "@/components/ui/skeleton";
 import { historialPrecios } from "@/lib/actions/productos-actions";
 import { margen } from "@/lib/precios";
-import type { CambioPrecio, ProductoConCategoria } from "@/types/database.types";
+import type { CambioPrecio, Fecha, ProductoConCategoria } from "@/types/database.types";
 
 const money = (n: number) => `$${Number(n).toLocaleString("es-AR", { maximumFractionDigits: 0 })}`;
 
-const fecha = (iso: string) =>
-  new Date(iso).toLocaleDateString("es-AR", { day: "2-digit", month: "short", year: "numeric" });
+const fecha = (valor: Fecha) =>
+  new Date(valor).toLocaleDateString("es-AR", { day: "2-digit", month: "short", year: "numeric" });
 
 /**
  * Historial de precios de un producto.
@@ -128,7 +128,7 @@ export function HistorialPreciosDialog({
                     </div>
                     <time
                       className="shrink-0 text-caption text-muted-foreground"
-                      dateTime={c.created_at}
+                      dateTime={new Date(c.created_at).toISOString()}
                     >
                       {fecha(c.created_at)}
                     </time>

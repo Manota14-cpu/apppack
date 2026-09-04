@@ -1,8 +1,19 @@
+/**
+ * Una fecha que viene de la base.
+ *
+ * El driver de Postgres devuelve las columnas `timestamp` como `Date`, y Next
+ * las conserva al cruzar del servidor al cliente. Declararlas `string` era una
+ * mentira que compilaba: `new Date(x)` funciona con las dos, así que todo
+ * andaba… hasta que alguien escribió `.slice(0, 10)` sobre una fecha y reventó
+ * recién al descargar un archivo. Con este tipo, eso no compila.
+ */
+export type Fecha = string | Date;
+
 export interface Categoria {
   id: string;
   nombre: string;
   color: string | null;
-  created_at: string;
+  created_at: Fecha;
 }
 
 export interface Producto {
@@ -19,7 +30,7 @@ export interface Producto {
   stock: number;
   stock_minimo: number;
   activo: boolean;
-  created_at: string;
+  created_at: Fecha;
   updated_at: string;
 }
 
@@ -74,7 +85,7 @@ export interface MovimientoStock {
   cantidad: number;
   stock_resultante: number;
   motivo: string | null;
-  created_at: string;
+  created_at: Fecha;
 }
 
 export interface MovimientoConProducto extends MovimientoStock {
@@ -127,14 +138,20 @@ export interface Pedido {
   razon_social: string | null;
   dni_cuit: string | null;
   requiere_factura: boolean;
-  telefono: string;
+  // Una venta de mostrador no tiene domicilio ni teléfono: son datos ausentes
+  // de verdad, no cadenas vacías que finjan serlo.
+  telefono: string | null;
   email: string | null;
-  direccion: string;
-  localidad: string;
-  provincia: string;
+  direccion: string | null;
+  localidad: string | null;
+  provincia: string | null;
   notas: string | null;
   total: number;
-  created_at: string;
+  /** Medio de pago. Solo en ventas de mostrador. */
+  metodo_pago: string | null;
+  /** Turno de caja en el que se cobró, si fue por mostrador. */
+  caja_id: string | null;
+  created_at: Fecha;
   items: ItemPedido[];
 }
 
@@ -148,33 +165,66 @@ export interface CambioPrecio {
   costo_anterior: number | null;
   costo_nuevo: number | null;
   motivo: string | null;
-  created_at: string;
+  created_at: Fecha;
 }
 
-// ─────────────────────────────  Recuentos  ─────────────────────────────
+// ───────────────────────────────  Caja  ───────────────────────────────
 
-export const ESTADOS_RECUENTO = ["abierto", "cerrado", "anulado"] as const;
+export const METODOS_PAGO = ["efectivo", "transferencia", "tarjeta", "otro"] as const;
+export type MetodoPago = (typeof METODOS_PAGO)[number];
 
-export interface ItemRecuento {
+export const ETIQUETA_PAGO: Record<string, string> = {
+  efectivo: "Efectivo",
+  transferencia: "Transferencia",
+  tarjeta: "Tarjeta",
+  otro: "Otro",
+};
+
+export interface VentaCaja {
   id: string;
-  producto_id: string;
+  numero: number;
   nombre: string;
-  sku: string | null;
-  unidad_medida: string;
-  /** Stock del sistema al momento de anotarse. */
-  esperado: number;
-  /** Lo contado de verdad. Null mientras no se haya contado. */
-  contado: number | null;
+  total: number;
+  metodo_pago: string;
+  notas: string | null;
+  created_at: Fecha;
+  renglones: number;
+  unidades: number;
 }
 
-export interface Recuento {
+export interface TotalesCaja {
+  efectivo: number;
+  transferencia: number;
+  tarjeta: number;
+  otro: number;
+  total: number;
+  cantidad: number;
+}
+
+export interface Caja {
   id: string;
   numero: number;
   estado: string;
+  /** Con cuánto efectivo arrancó el turno. */
+  fondo: number;
+  /** Lo contado al cerrar. Null mientras siga abierta. */
+  contado: number | null;
   nota: string | null;
-  created_at: string;
-  closed_at: string | null;
-  items: ItemRecuento[];
+  opened_at: Fecha;
+  closed_at: Fecha | null;
+  ventas: VentaCaja[];
+  totales: TotalesCaja;
+}
+
+/** Un renglón del cobro, antes de confirmarlo. */
+export interface ItemCobro {
+  producto_id: string | null;
+  nombre: string;
+  unidad_medida: string;
+  precio: number;
+  cantidad: number;
+  /** Lo que hay en góndola, para no cobrar más de lo que se puede entregar. */
+  stock: number;
 }
 
 // ─────────────────────────────  Imágenes  ─────────────────────────────

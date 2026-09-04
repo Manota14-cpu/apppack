@@ -8,7 +8,7 @@ import {
   BarChart3,
   Package,
   ClipboardList,
-  ClipboardCheck,
+  Wallet,
   History,
   Settings,
 } from "lucide-react";
@@ -18,8 +18,8 @@ const navegacion = [
   { nombre: "Dashboard", href: "/dashboard", icono: LayoutDashboard },
   { nombre: "Informes", href: "/informes", icono: BarChart3 },
   { nombre: "Productos", href: "/productos", icono: Package },
+  { nombre: "Caja", href: "/caja", icono: Wallet },
   { nombre: "Pedidos", href: "/pedidos", icono: ClipboardList },
-  { nombre: "Recuentos", href: "/recuentos", icono: ClipboardCheck },
   { nombre: "Movimientos", href: "/movimientos", icono: History },
 ];
 

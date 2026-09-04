@@ -6,7 +6,7 @@
 -- el cliente (la web cachea las páginas 60 segundos).
 --
 -- Las tablas (`Product`, `Category`, `StockMovement`, `Order`, `PriceChange`,
--- `StockCount`…) las gobierna Prisma desde
+-- `CashSession`…) las gobierna Prisma desde
 -- packdistribuidora/prisma/schema.prisma. Este archivo solo agrega las
 -- funciones y disparadores que Prisma no maneja.
 --
@@ -362,11 +362,18 @@ end;
 $$;
 
 -- ---------------------------------------------------------------------
--- Recuentos de inventario
+-- Caja de mostrador
 -- ---------------------------------------------------------------------
--- Abrir un recuento congela una foto del stock del sistema para poder
--- comparar contra lo que se cuente a mano.
-create or replace function abrir_recuento(p_nota text, p_categoria_id text default null)
+-- La función de recuentos se retiró; sus tablas y funciones se descartan
+-- explícitamente para que una base vieja quede igual que una nueva.
+drop function if exists abrir_recuento(text, text);
+drop function if exists cerrar_recuento(text);
+drop table if exists "StockCountItem";
+drop table if exists "StockCount";
+
+-- Abre un turno. Uno solo a la vez: dos cajas abiertas en paralelo harían
+-- imposible saber a cuál pertenece cada cobro.
+create or replace function abrir_caja(p_fondo int, p_nota text default null)
 returns text
 language plpgsql
 as $$
@@ -374,76 +381,133 @@ declare
   v_id text;
   v_numero int;
 begin
-  if exists (select 1 from "StockCount" where status = 'abierto') then
-    raise exception 'Ya hay un recuento abierto. Cerralo o anulalo antes de empezar otro.'
+  if exists (select 1 from "CashSession" where status = 'abierta') then
+    raise exception 'Ya hay una caja abierta. Cerrala antes de abrir otra.'
       using errcode = 'P0001';
   end if;
 
-  select coalesce(max(number), 0) + 1 into v_numero from "StockCount";
+  select coalesce(max(number), 0) + 1 into v_numero from "CashSession";
 
-  insert into "StockCount" (number, status, note)
-  values (v_numero, 'abierto', nullif(p_nota, ''))
+  insert into "CashSession" (number, status, "openingFloat", note)
+  values (v_numero, 'abierta', greatest(coalesce(p_fondo, 0), 0), nullif(p_nota, ''))
   returning id into v_id;
-
-  insert into "StockCountItem" ("countId", "productId", expected, counted)
-  select v_id, p.id, p."stockAvailable", null
-    from "Product" p
-   where p.active
-     and (p_categoria_id is null or p."categoryId" = p_categoria_id)
-   order by p.name;
-
-  if not exists (select 1 from "StockCountItem" where "countId" = v_id) then
-    raise exception 'No hay productos activos para contar.' using errcode = 'P0001';
-  end if;
 
   return v_id;
 end;
 $$;
 
--- Cerrar genera todos los ajustes de una vez.
+-- Cobra una venta de mostrador.
 --
--- La diferencia se calcula contra el stock ACTUAL, no contra la foto del
--- momento de abrir: entre que se abre el recuento y se cierra puede haber
--- entrado mercadería, y el número contado es el que manda.
-create or replace function cerrar_recuento(p_recuento_id text)
-returns int
+-- Hace lo mismo que un pedido de la tienda —crear la venta y descontar el
+-- stock— pero en una sola operación: si un renglón no tiene stock, no queda
+-- media venta cobrada. Antes esto se cargaba como "salida" a mano, sin precio
+-- ni cliente, así que la plata no figuraba en ningún informe.
+create or replace function cobrar_mostrador(p jsonb)
+returns jsonb
 language plpgsql
 as $$
 declare
+  v_caja    text := p->>'caja_id';
+  v_id      text;
   v_numero  int;
-  v_estado  text;
-  v_ajustes int := 0;
-  v_actual  int;
-  r record;
+  v_total   bigint := 0;
+  r         jsonb;
 begin
-  select number, status into v_numero, v_estado
-  from "StockCount" where id = p_recuento_id
-  for update;
-
-  if v_numero is null then
-    raise exception 'Recuento no encontrado';
-  end if;
-  if v_estado <> 'abierto' then
-    raise exception 'Este recuento ya está %', v_estado using errcode = 'P0001';
+  if not exists (select 1 from "CashSession" where id = v_caja and status = 'abierta') then
+    raise exception 'La caja no está abierta.' using errcode = 'P0001';
   end if;
 
-  for r in
-    select "productId" as pid, counted
-      from "StockCountItem"
-     where "countId" = p_recuento_id and counted is not null
-  loop
-    select "stockAvailable" into v_actual from "Product" where id = r.pid;
-    if v_actual is not null and r.counted <> v_actual then
-      perform ajustar_stock(r.pid, r.counted - v_actual, 'Recuento #' || v_numero, 'ajuste');
-      v_ajustes := v_ajustes + 1;
+  if jsonb_array_length(coalesce(p->'items', '[]'::jsonb)) = 0 then
+    raise exception 'No hay nada para cobrar.' using errcode = 'P0001';
+  end if;
+
+  for r in select * from jsonb_array_elements(p->'items') loop
+    v_total := v_total + ((r->>'precio')::bigint * (r->>'cantidad')::bigint);
+  end loop;
+
+  select coalesce(max(number), 0) + 1 into v_numero from "Order";
+
+  insert into "Order" (
+    id, number, channel, status, nombre, total, "paymentMethod", "sessionId", notas, "createdAt"
+  ) values (
+    (gen_random_uuid())::text, v_numero, 'mostrador', 'entregado',
+    coalesce(nullif(p->>'nombre', ''), 'Mostrador'),
+    v_total,
+    coalesce(nullif(p->>'metodo_pago', ''), 'efectivo'),
+    v_caja,
+    nullif(p->>'notas', ''),
+    now()
+  ) returning id into v_id;
+
+  for r in select * from jsonb_array_elements(p->'items') loop
+    insert into "OrderItem" (id, "orderId", "productId", name, unit, price, quantity)
+    values (
+      (gen_random_uuid())::text, v_id,
+      nullif(r->>'producto_id', ''),
+      r->>'nombre',
+      coalesce(nullif(r->>'unidad_medida', ''), 'unidad'),
+      (r->>'precio')::int,
+      (r->>'cantidad')::int
+    );
+
+    -- Mismo camino que la tienda: bloquea la fila, valida y deja movimiento.
+    if nullif(r->>'producto_id', '') is not null then
+      perform ajustar_stock(
+        r->>'producto_id',
+        -((r->>'cantidad')::int),
+        'Venta mostrador #' || v_numero,
+        'venta'
+      );
     end if;
   end loop;
 
-  update "StockCount"
-     set status = 'cerrado', "closedAt" = now()
-   where id = p_recuento_id;
+  return jsonb_build_object('id', v_id, 'numero', v_numero, 'total', v_total);
+end;
+$$;
 
-  return v_ajustes;
+-- Cierra el turno y devuelve el arqueo.
+create or replace function cerrar_caja(p_caja_id text, p_contado int, p_nota text default null)
+returns jsonb
+language plpgsql
+as $$
+declare
+  v_estado  text;
+  v_fondo   int;
+  v_efectivo bigint;
+  v_total    bigint;
+begin
+  select status, "openingFloat" into v_estado, v_fondo
+  from "CashSession" where id = p_caja_id
+  for update;
+
+  if v_estado is null then
+    raise exception 'La caja no existe.';
+  end if;
+  if v_estado <> 'abierta' then
+    raise exception 'Esta caja ya está cerrada.' using errcode = 'P0001';
+  end if;
+
+  select coalesce(sum(total) filter (where "paymentMethod" = 'efectivo'), 0),
+         coalesce(sum(total), 0)
+    into v_efectivo, v_total
+    from "Order"
+   where "sessionId" = p_caja_id and status <> 'cancelado';
+
+  update "CashSession"
+     set status = 'cerrada',
+         "countedCash" = greatest(coalesce(p_contado, 0), 0),
+         note = coalesce(nullif(p_nota, ''), note),
+         "closedAt" = now()
+   where id = p_caja_id;
+
+  return jsonb_build_object(
+    'fondo', v_fondo,
+    'efectivo', v_efectivo,
+    'total', v_total,
+    'esperado', v_fondo + v_efectivo,
+    'contado', greatest(coalesce(p_contado, 0), 0),
+    'diferencia', greatest(coalesce(p_contado, 0), 0) - (v_fondo + v_efectivo)
+  );
 end;
 $$;
 

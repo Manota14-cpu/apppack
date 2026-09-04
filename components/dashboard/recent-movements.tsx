@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { ArrowDownCircle, ArrowUpCircle, ArrowRight, PackagePlus } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import type { MovimientoConProducto } from "@/types/database.types";
+import type { Fecha, MovimientoConProducto } from "@/types/database.types";
 
 const ICONOS: Record<string, typeof ArrowUpCircle> = {
   entrada: ArrowUpCircle,
@@ -11,7 +11,7 @@ const ICONOS: Record<string, typeof ArrowUpCircle> = {
   creacion: PackagePlus,
 };
 
-function tiempoRelativo(fecha: string): string {
+function tiempoRelativo(fecha: Fecha): string {
   const minutos = Math.floor((Date.now() - new Date(fecha).getTime()) / 60000);
   if (minutos < 1) return "recién";
   if (minutos < 60) return `hace ${minutos} min`;

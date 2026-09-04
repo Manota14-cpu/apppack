@@ -290,17 +290,6 @@ export const imagenSchema = z.object({
   alt: textoOpcional(160),
 });
 
-// ────────────────────────────  Recuentos  ────────────────────────────
-
-export const recuentoConteoSchema = z.object({
-  recuentoId: z.string().trim().min(1).max(64),
-  productoId: z.string().trim().min(1).max(64),
-  contado: z.preprocess(
-    (v) => (v === "" || v === undefined || v === null ? null : v),
-    z.coerce.number().min(0).max(9_999_999).transform((n) => Math.round(n)).nullable()
-  ),
-});
-
 // ───────────────────────────  Importación  ───────────────────────────
 
 export const filaImportacionSchema = z.object({
@@ -331,4 +320,60 @@ export function formDataAObjeto(formData: FormData): Record<string, string> {
 /** Primer mensaje de error legible de un ZodError. */
 export function primerError(error: z.ZodError): string {
   return error.issues[0]?.message ?? "Los datos ingresados no son válidos.";
+}
+
+// ───────────────────────────────  Caja  ───────────────────────────────
+
+export const METODOS_PAGO_VALIDOS = ["efectivo", "transferencia", "tarjeta", "otro"] as const;
+
+/** Tope de renglones por cobro: más que esto no es un mostrador, es un pedido. */
+export const MAX_RENGLONES_COBRO = 60;
+
+export const aperturaCajaSchema = z.object({
+  fondo: z.coerce
+    .number({ message: "El fondo tiene que ser un número" })
+    .min(0, "El fondo no puede ser negativo")
+    .max(99_999_999, "El fondo es demasiado grande")
+    .transform((n) => Math.round(n))
+    .default(0),
+  nota: z.string().trim().max(200).default(""),
+});
+
+export const cierreCajaSchema = z.object({
+  cajaId: z.string().trim().min(1, "Caja inválida").max(64),
+  contado: z.coerce
+    .number({ message: "Lo contado tiene que ser un número" })
+    .min(0, "No puede ser negativo")
+    .max(99_999_999, "Es demasiado grande")
+    .transform((n) => Math.round(n))
+    .default(0),
+  nota: z.string().trim().max(400).default(""),
+});
+
+export const cobroSchema = z.object({
+  cajaId: z.string().trim().min(1, "Caja inválida").max(64),
+  nombre: z.string().trim().max(160).default(""),
+  metodoPago: z.enum(METODOS_PAGO_VALIDOS).default("efectivo"),
+  notas: z.string().trim().max(400).default(""),
+  items: z
+    .array(
+      z.object({
+        producto_id: z.string().trim().max(64).nullable().default(null),
+        nombre: z.string().trim().min(1, "Falta el nombre de un renglón").max(160),
+        unidad_medida: z.string().trim().max(24).default("unidad"),
+        precio: z.coerce.number().min(0).max(99_999_999).transform((n) => Math.round(n)),
+        cantidad: z.coerce
+          .number()
+          .int("La cantidad tiene que ser entera")
+          .min(1, "La cantidad tiene que ser al menos 1")
+          .max(1_000_000),
+      })
+    )
+    .min(1, "No hay nada para cobrar")
+    .max(MAX_RENGLONES_COBRO, `No se pueden cobrar más de ${MAX_RENGLONES_COBRO} renglones juntos`),
+});
+
+/** El total del cobro, calculado en un solo lugar para que no discrepe. */
+export function totalDeCobro(items: { precio: number; cantidad: number }[]): number {
+  return items.reduce((s, i) => s + i.precio * i.cantidad, 0);
 }

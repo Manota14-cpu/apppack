@@ -6,7 +6,7 @@ import {
   LayoutDashboard,
   Package,
   ClipboardList,
-  ClipboardCheck,
+  Wallet,
   History,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
@@ -14,8 +14,8 @@ import { cn } from "@/lib/utils";
 const mobileNav = [
   { nombre: "Panel", href: "/dashboard", icono: LayoutDashboard },
   { nombre: "Productos", href: "/productos", icono: Package },
+  { nombre: "Caja", href: "/caja", icono: Wallet },
   { nombre: "Pedidos", href: "/pedidos", icono: ClipboardList },
-  { nombre: "Recuento", href: "/recuentos", icono: ClipboardCheck },
   { nombre: "Historial", href: "/movimientos", icono: History },
 ];
 

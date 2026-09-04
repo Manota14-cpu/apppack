@@ -11,6 +11,7 @@ import type { Pedido } from "@/types/database.types";
 
 function revalidarPedidos() {
   revalidatePath("/pedidos");
+  revalidatePath("/caja");
   revalidatePath("/dashboard");
   revalidatePath("/informes");
   revalidatePath("/productos");
@@ -73,4 +74,47 @@ export async function guardarNotaPedido(pedidoId: string, nota: string) {
 
   revalidarPedidos();
   return { success: true as const };
+}
+
+/**
+ * Borra un pedido para siempre.
+ *
+ * Antes de borrar devuelve el stock, si el pedido todavía lo tenía descontado:
+ * si no, las unidades desaparecerían del sistema sin haber salido del depósito
+ * y el stock quedaría mintiendo para siempre, sin ningún rastro que permita
+ * descubrir por qué.
+ *
+ * A diferencia de cancelar, esto no deja historia: el pedido no vuelve a
+ * figurar en los informes. Cancelar es lo que casi siempre conviene; borrar
+ * existe para sacar de en medio una prueba o un pedido cargado por error.
+ */
+export async function eliminarPedido(pedidoId: string) {
+  await requerirSesion();
+
+  const id = pedidoId.trim().slice(0, 64);
+  if (!id) return falloDeValidacion("Pedido inválido.");
+
+  try {
+    const pedido = await consultarUna<{ numero: number; estado: string }>(
+      `select number as numero, status as estado from "Order" where id = $1`,
+      [id]
+    );
+    if (!pedido) return falloDeValidacion("Ese pedido ya no existe.");
+
+    // Un pedido cancelado ya devolvió su stock: devolverlo otra vez lo
+    // duplicaría. `cambiar_estado_pedido` es la única puerta a esa devolución,
+    // así que se pasa por ahí en vez de repetir la lógica.
+    if (pedido.estado !== "cancelado") {
+      await consultar(`select cambiar_estado_pedido($1, 'cancelado')`, [id]);
+    }
+
+    // Los renglones se van con él por la cascada declarada en el esquema.
+    await ejecutar(`delete from "Order" where id = $1`, [id]);
+
+    revalidarPedidos();
+    await avisarATienda();
+    return { success: true as const, numero: pedido.numero };
+  } catch (error) {
+    return fallo(error, "pedidos:eliminar");
+  }
 }

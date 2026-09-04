@@ -88,6 +88,9 @@ export const CAMPOS_PEDIDO = `
   o.provincia,
   o.notas,
   o.total,
+  -- Solo lo llevan las ventas de mostrador; en un pedido de la web es nulo.
+  o."paymentMethod"   as metodo_pago,
+  o."sessionId"       as caja_id,
   o."createdAt"       as created_at,
   coalesce((
     select jsonb_agg(jsonb_build_object(

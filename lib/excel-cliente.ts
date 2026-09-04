@@ -226,3 +226,218 @@ export async function descargarCatalogo() {
 
   await descargar(libro, `apppack-catalogo-${new Date().toISOString().slice(0, 10)}.xlsx`);
 }
+
+// ─────────────────────────  Pedidos y caja  ─────────────────────────
+
+/** Las fechas llegan como Date desde la base y como string desde un JSON. */
+type Fecha = string | Date;
+
+const fechaHora = (valor: Fecha) =>
+  new Date(valor).toLocaleString("es-AR", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
+
+/** aaaa-mm-dd, para nombrar el archivo sin depender del huso del navegador. */
+function soloElDia(valor: Fecha): string {
+  const d = new Date(valor);
+  const mes = String(d.getMonth() + 1).padStart(2, "0");
+  const dia = String(d.getDate()).padStart(2, "0");
+  return `${d.getFullYear()}-${mes}-${dia}`;
+}
+
+export interface PedidoExportable {
+  numero: number;
+  estado: string;
+  canal: string;
+  nombre: string;
+  telefono: string | null;
+  direccion: string | null;
+  localidad: string | null;
+  provincia: string | null;
+  metodo_pago: string | null;
+  notas: string | null;
+  total: number;
+  created_at: Fecha;
+  items: { nombre: string; unidad_medida: string; precio: number; cantidad: number }[];
+}
+
+/**
+ * Exporta pedidos en dos hojas.
+ *
+ * Una fila por pedido no alcanza para revisar qué se vendió, y una fila por
+ * renglón hace imposible sumar totales sin contarlos dos veces. Con las dos
+ * hojas cada pregunta tiene su tabla, y ninguna miente por agregación.
+ */
+export async function descargarPedidos(pedidos: PedidoExportable[], sufijo = "") {
+  const ExcelJS = (await import("exceljs")).default;
+  const libro = new ExcelJS.Workbook();
+
+  const hoja = libro.addWorksheet("Pedidos");
+  hoja.columns = [
+    { header: "numero", key: "numero", width: 10 },
+    { header: "fecha", key: "fecha", width: 18 },
+    { header: "estado", key: "estado", width: 13 },
+    { header: "canal", key: "canal", width: 12 },
+    { header: "cliente", key: "nombre", width: 26 },
+    { header: "telefono", key: "telefono", width: 16 },
+    { header: "direccion", key: "direccion", width: 30 },
+    { header: "localidad", key: "localidad", width: 16 },
+    { header: "provincia", key: "provincia", width: 14 },
+    { header: "medio_de_pago", key: "metodo_pago", width: 16 },
+    { header: "renglones", key: "renglones", width: 11 },
+    { header: "unidades", key: "unidades", width: 11 },
+    { header: "total", key: "total", width: 14 },
+    { header: "notas", key: "notas", width: 34 },
+  ];
+  hoja.getRow(1).font = { bold: true };
+
+  const detalle = libro.addWorksheet("Renglones");
+  detalle.columns = [
+    { header: "pedido", key: "numero", width: 10 },
+    { header: "fecha", key: "fecha", width: 18 },
+    { header: "estado", key: "estado", width: 13 },
+    { header: "producto", key: "producto", width: 40 },
+    { header: "unidad", key: "unidad", width: 12 },
+    { header: "cantidad", key: "cantidad", width: 11 },
+    { header: "precio_unitario", key: "precio", width: 16 },
+    { header: "subtotal", key: "subtotal", width: 14 },
+  ];
+  detalle.getRow(1).font = { bold: true };
+
+  for (const p of pedidos) {
+    hoja.addRow({
+      numero: p.numero,
+      fecha: fechaHora(p.created_at),
+      estado: p.estado,
+      canal: p.canal,
+      nombre: p.nombre,
+      telefono: p.telefono ?? "",
+      direccion: p.direccion ?? "",
+      localidad: p.localidad ?? "",
+      provincia: p.provincia ?? "",
+      metodo_pago: p.metodo_pago ?? "",
+      renglones: p.items.length,
+      unidades: p.items.reduce((s, i) => s + i.cantidad, 0),
+      total: p.total,
+      notas: p.notas ?? "",
+    });
+
+    for (const i of p.items) {
+      detalle.addRow({
+        numero: p.numero,
+        fecha: fechaHora(p.created_at),
+        estado: p.estado,
+        producto: i.nombre,
+        unidad: i.unidad_medida,
+        cantidad: i.cantidad,
+        precio: i.precio,
+        subtotal: i.precio * i.cantidad,
+      });
+    }
+  }
+
+  const hoy = soloElDia(new Date());
+  await descargar(libro, `apppack-pedidos${sufijo ? `-${sufijo}` : ""}-${hoy}.xlsx`);
+}
+
+export interface CajaExportable {
+  numero: number;
+  estado: string;
+  fondo: number;
+  contado: number | null;
+  nota: string | null;
+  opened_at: Fecha;
+  closed_at: Fecha | null;
+  totales: {
+    efectivo: number;
+    transferencia: number;
+    tarjeta: number;
+    otro: number;
+    total: number;
+    cantidad: number;
+  };
+  ventas: {
+    numero: number;
+    nombre: string;
+    total: number;
+    metodo_pago: string;
+    notas: string | null;
+    created_at: Fecha;
+    renglones: number;
+    unidades: number;
+  }[];
+}
+
+/** El turno de caja: el arqueo arriba y cada cobro debajo. */
+export async function descargarCaja(caja: CajaExportable) {
+  const ExcelJS = (await import("exceljs")).default;
+  const libro = new ExcelJS.Workbook();
+  const hoja = libro.addWorksheet(`Caja ${caja.numero}`);
+
+  const esperado = caja.fondo + caja.totales.efectivo;
+  const diferencia = caja.contado === null ? null : caja.contado - esperado;
+
+  const titulo = (texto: string) => {
+    const fila = hoja.addRow([texto]);
+    fila.font = { bold: true };
+    return fila;
+  };
+
+  titulo(`Turno de caja #${caja.numero}`);
+  hoja.addRow(["Estado", caja.estado]);
+  hoja.addRow(["Abierta", fechaHora(caja.opened_at)]);
+  hoja.addRow(["Cerrada", caja.closed_at ? fechaHora(caja.closed_at) : "sigue abierta"]);
+  if (caja.nota) hoja.addRow(["Nota", caja.nota]);
+  hoja.addRow([]);
+
+  titulo("Arqueo");
+  hoja.addRow(["Fondo inicial", caja.fondo]);
+  hoja.addRow(["Cobrado en efectivo", caja.totales.efectivo]);
+  hoja.addRow(["Efectivo esperado en caja", esperado]);
+  hoja.addRow(["Contado al cerrar", caja.contado ?? "—"]);
+  // La diferencia es el número por el que existe el turno: sin él, cerrar la
+  // caja sería solo apagar la luz.
+  hoja.addRow(["Diferencia", diferencia ?? "—"]);
+  hoja.addRow([]);
+
+  titulo("Cobrado por medio de pago");
+  hoja.addRow(["Efectivo", caja.totales.efectivo]);
+  hoja.addRow(["Transferencia", caja.totales.transferencia]);
+  hoja.addRow(["Tarjeta", caja.totales.tarjeta]);
+  hoja.addRow(["Otro", caja.totales.otro]);
+  hoja.addRow(["Total cobrado", caja.totales.total]);
+  hoja.addRow(["Ventas", caja.totales.cantidad]);
+  hoja.addRow([]);
+
+  titulo("Ventas del turno");
+  const encabezado = hoja.addRow([
+    "venta", "hora", "cliente", "medio_de_pago", "renglones", "unidades", "total", "notas",
+  ]);
+  encabezado.font = { bold: true };
+
+  for (const v of caja.ventas) {
+    hoja.addRow([
+      v.numero,
+      fechaHora(v.created_at),
+      v.nombre,
+      v.metodo_pago,
+      v.renglones,
+      v.unidades,
+      v.total,
+      v.notas ?? "",
+    ]);
+  }
+
+  hoja.getColumn(1).width = 26;
+  hoja.getColumn(2).width = 20;
+  hoja.getColumn(3).width = 24;
+  hoja.getColumn(4).width = 16;
+  for (const i of [5, 6, 7]) hoja.getColumn(i).width = 12;
+  hoja.getColumn(8).width = 30;
+
+  await descargar(libro, `apppack-caja-${caja.numero}-${soloElDia(caja.opened_at)}.xlsx`);
+}
