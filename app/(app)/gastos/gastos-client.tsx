@@ -6,6 +6,7 @@ import { Download, Lock, Pencil, Plus, Receipt, Search, Trash2, Wallet } from "l
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { InputNumero } from "@/components/ui/input-numero";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -411,14 +412,11 @@ function GastoDialog({
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="ga-monto">Monto *</Label>
-              <Input
+              <InputNumero
                 id="ga-monto"
                 name="monto"
-                type="number"
-                inputMode="numeric"
-                min={1}
-                step={1}
                 defaultValue={gasto?.monto ?? ""}
+                placeholder="169.261,00"
                 required
               />
             </div>

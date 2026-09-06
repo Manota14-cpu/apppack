@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { InputNumero } from "@/components/ui/input-numero";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import {
@@ -98,13 +99,10 @@ export function CostosDialog({
                         {m !== null && ` · margen ${m}%`}
                       </p>
                     </div>
-                    <Input
-                      type="number"
-                      step="1"
-                      min="0"
-                      inputMode="numeric"
+                    <InputNumero
+                      ayuda={false}
                       value={valor}
-                      onChange={(e) => setValores((p) => ({ ...p, [f.id]: e.target.value }))}
+                      onValorChange={(v) => setValores((p) => ({ ...p, [f.id]: v }))}
                       placeholder="Costo"
                       aria-label={`Precio de costo de ${f.nombre}`}
                       className="h-10 w-28 shrink-0 text-right"

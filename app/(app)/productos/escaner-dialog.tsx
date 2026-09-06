@@ -5,6 +5,7 @@ import { ArrowDownCircle, ArrowUpCircle, Link2, Search } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { InputNumero } from "@/components/ui/input-numero";
 import { Label } from "@/components/ui/label";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { LectorCodigo } from "@/components/lector-codigo";
@@ -197,14 +198,11 @@ export function EscanerDialog({
 
             <div className="space-y-1.5">
               <Label htmlFor="esc-cantidad">Cantidad</Label>
-              <Input
+              <InputNumero
                 id="esc-cantidad"
-                type="number"
-                min="1"
-                step="1"
-                inputMode="numeric"
+                moneda={false}
                 value={cantidad}
-                onChange={(e) => setCantidad(e.target.value)}
+                onValorChange={setCantidad}
               />
             </div>
 

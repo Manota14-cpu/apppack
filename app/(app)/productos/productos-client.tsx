@@ -22,6 +22,7 @@ import {
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { InputNumero } from "@/components/ui/input-numero";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
@@ -649,8 +650,8 @@ export function ProductosClient({
             <form onSubmit={handleAjustar} className="space-y-4">
               <div className="space-y-1.5">
                 <Label htmlFor="ajuste-cantidad">Cantidad</Label>
-                <Input id="ajuste-cantidad" name="cantidad" type="number" step="0.01" min="0.01"
-                  defaultValue="1" required autoFocus inputMode="decimal" />
+                <InputNumero id="ajuste-cantidad" name="cantidad" moneda={false}
+                  defaultValue="1" required autoFocus />
               </div>
               <div className="space-y-1.5">
                 <Label htmlFor="ajuste-motivo">Motivo</Label>

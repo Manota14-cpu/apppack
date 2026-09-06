@@ -5,6 +5,7 @@ import { Minus, Plus, Search, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { InputNumero } from "@/components/ui/input-numero";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
@@ -210,18 +211,15 @@ export function EditarPedidoDialog({
                     </Button>
                   </span>
 
-                  <Input
-                    type="number"
-                    min="0"
-                    step="1"
-                    inputMode="numeric"
+                  <InputNumero
+                    ayuda={false}
                     value={it.precio}
-                    onChange={(e) =>
+                    onValorChange={(v) =>
                       setItems((prev) => {
                         const copia = [...prev];
                         copia[i] = {
                           ...copia[i]!,
-                          precio: Math.max(0, Math.round(Number(e.target.value) || 0)),
+                          precio: Math.max(0, Math.round(Number(v) || 0)),
                         };
                         return copia;
                       })

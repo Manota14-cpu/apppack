@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { Input } from "@/components/ui/input";
+import { InputNumero } from "@/components/ui/input-numero";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
@@ -171,40 +172,29 @@ export function CamposProducto({
 
         <div className="space-y-1.5">
           <Label htmlFor="f-costo">Precio costo ($)</Label>
-          <Input
+          <InputNumero
             id="f-costo"
             name="precio_costo"
-            type="number"
-            step="1"
-            min="0"
-            inputMode="numeric"
             defaultValue={producto ? Number(producto.precio_costo) : 0}
           />
         </div>
 
         <div className="space-y-1.5">
           <Label htmlFor="f-venta">Precio venta ($)</Label>
-          <Input
+          <InputNumero
             id="f-venta"
             name="precio_venta"
-            type="number"
-            step="1"
-            min="0"
-            inputMode="numeric"
             value={precioVenta}
-            onChange={(e) => setPrecioVenta(Number(e.target.value) || 0)}
+            onValorChange={(v) => setPrecioVenta(Number(v) || 0)}
           />
         </div>
 
         <div className="space-y-1.5">
           <Label htmlFor="f-stock">{editando ? "Stock actual" : "Stock inicial"}</Label>
-          <Input
+          <InputNumero
             id="f-stock"
             name="stock"
-            type="number"
-            step="1"
-            min="0"
-            inputMode="numeric"
+            moneda={false}
             defaultValue={producto ? Number(producto.stock) : 0}
             disabled={editando}
             aria-describedby={editando ? "f-stock-ayuda" : undefined}
@@ -218,13 +208,10 @@ export function CamposProducto({
 
         <div className="space-y-1.5">
           <Label htmlFor="f-minimo">Stock mínimo</Label>
-          <Input
+          <InputNumero
             id="f-minimo"
             name="stock_minimo"
-            type="number"
-            step="1"
-            min="0"
-            inputMode="numeric"
+            moneda={false}
             defaultValue={producto ? Number(producto.stock_minimo) : 0}
             aria-describedby="f-minimo-ayuda"
           />
@@ -248,15 +235,11 @@ export function CamposProducto({
 
           <div className="mt-3 space-y-1.5">
             <Label htmlFor="f-anterior">Precio anterior ($)</Label>
-            <Input
+            <InputNumero
               id="f-anterior"
               name="precio_anterior"
-              type="number"
-              step="1"
-              min="0"
-              inputMode="numeric"
               value={precioAnterior || ""}
-              onChange={(e) => setPrecioAnterior(Number(e.target.value) || 0)}
+              onValorChange={(v) => setPrecioAnterior(Number(v) || 0)}
               placeholder="Vacío = sin oferta"
               aria-describedby="f-anterior-ayuda"
             />
@@ -303,26 +286,19 @@ export function CamposProducto({
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="f-mayqty">Cantidad mínima mayorista</Label>
-            <Input
+            <InputNumero
               id="f-mayqty"
               name="cantidad_mayorista_min"
-              type="number"
-              step="1"
-              min="0"
-              inputMode="numeric"
+              moneda={false}
               defaultValue={producto?.cantidad_mayorista_min ?? ""}
               placeholder="Vacío = sin precio mayorista"
             />
           </div>
           <div className="space-y-1.5">
             <Label htmlFor="f-mayprecio">Precio mayorista ($)</Label>
-            <Input
+            <InputNumero
               id="f-mayprecio"
               name="precio_mayorista"
-              type="number"
-              step="1"
-              min="0"
-              inputMode="numeric"
               defaultValue={producto?.precio_mayorista ?? ""}
             />
           </div>
@@ -379,13 +355,10 @@ export function CamposProducto({
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="f-peso">Peso (gramos)</Label>
-            <Input
+            <InputNumero
               id="f-peso"
               name="peso_gramos"
-              type="number"
-              step="1"
-              min="0"
-              inputMode="numeric"
+              moneda={false}
               defaultValue={producto?.peso_gramos ?? ""}
             />
           </div>

@@ -19,6 +19,7 @@ import {
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { InputNumero } from "@/components/ui/input-numero";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Textarea } from "@/components/ui/textarea";
@@ -507,14 +508,10 @@ function Mostrador({ caja, onCobrado }: { caja: Caja; onCobrado: () => void }) {
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-1.5">
                   <Label htmlFor="caja-recibido">Con cuánto paga</Label>
-                  <Input
+                  <InputNumero
                     id="caja-recibido"
-                    type="number"
-                    min="0"
-                    step="1"
-                    inputMode="numeric"
                     value={recibido}
-                    onChange={(e) => setRecibido(e.target.value)}
+                    onValorChange={setRecibido}
                     placeholder={String(enEfectivo)}
                   />
                 </div>
@@ -629,13 +626,10 @@ function RenglonesDelTicket({
             </Button>
           </span>
 
-          <Input
-            type="number"
-            min="0"
-            step="1"
-            inputMode="numeric"
+          <InputNumero
+            ayuda={false}
             value={it.precio}
-            onChange={(e) => onPrecio(i, e.target.value)}
+            onValorChange={(v) => onPrecio(i, v)}
             aria-label={`Precio de ${it.nombre}`}
             className="h-10 w-28 shrink-0 text-right"
           />
@@ -717,15 +711,12 @@ function Pagos({
             </SelectContent>
           </Select>
 
-          <Input
-            type="number"
-            min="0"
-            step="1"
-            inputMode="numeric"
+          <InputNumero
+            ayuda={false}
             value={p.monto}
-            onChange={(e) => {
+            onValorChange={(v) => {
               const copia = [...pagos];
-              copia[i] = { ...copia[i]!, monto: e.target.value };
+              copia[i] = { ...copia[i]!, monto: v };
               onCambiar(copia);
             }}
             placeholder={i === 0 ? String(montos[0]?.monto ?? total) : "0"}
@@ -840,14 +831,10 @@ function MovimientosDeCaja({ caja, onCambio }: { caja: Caja; onCambio: () => voi
           <div className="space-y-4">
             <div className="space-y-1.5">
               <Label htmlFor="mov-monto">Monto ($)</Label>
-              <Input
+              <InputNumero
                 id="mov-monto"
-                type="number"
-                min="1"
-                step="1"
-                inputMode="numeric"
                 value={monto}
-                onChange={(e) => setMonto(e.target.value)}
+                onValorChange={setMonto}
                 autoFocus
               />
             </div>
@@ -1306,14 +1293,10 @@ function AbrirCajaDialog({
         <div className="space-y-4">
           <div className="space-y-1.5">
             <Label htmlFor="caja-fondo">Fondo inicial ($)</Label>
-            <Input
+            <InputNumero
               id="caja-fondo"
-              type="number"
-              min="0"
-              step="1"
-              inputMode="numeric"
               value={fondo}
-              onChange={(e) => setFondo(e.target.value)}
+              onValorChange={setFondo}
               autoFocus
             />
           </div>
@@ -1435,14 +1418,10 @@ function CerrarCajaDialog({
 
           <div className="space-y-1.5">
             <Label htmlFor="caja-contado">Efectivo contado ($)</Label>
-            <Input
+            <InputNumero
               id="caja-contado"
-              type="number"
-              min="0"
-              step="1"
-              inputMode="numeric"
               value={contado}
-              onChange={(e) => setContado(e.target.value)}
+              onValorChange={setContado}
               placeholder={String(esperado)}
               autoFocus
             />

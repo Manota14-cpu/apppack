@@ -1,25 +1,48 @@
 import { z } from "zod";
 import { VALORES_CATEGORIA_GASTO } from "@/lib/gastos";
+import { parsearNumero } from "@/lib/monto";
 
 /**
- * Campo numérico que llega como string desde un <input type="number">.
+ * Un número escrito a mano, en el formato de acá.
+ *
+ * El campo ya manda el valor normalizado, pero la validación no puede depender
+ * de eso: si algo llega de otro lado —una versión vieja del cliente, una
+ * pegada en un campo suelto— «169.261,00» tiene que seguir significando ciento
+ * sesenta y nueve mil doscientos sesenta y uno, y no un error ni $169.
+ */
+const desdeTextoEscrito = (v: unknown) =>
+  typeof v === "string" ? parsearNumero(v) : v;
+
+/**
+ * Envuelve un esquema numérico para que también entienda lo escrito a mano.
+ *
+ * Se envuelve en vez de reemplazar para no perder los mensajes y los topes que
+ * cada campo ya tenía: lo único que cambia es cómo se lee el texto de entrada.
+ */
+const escrito = <T extends z.ZodTypeAny>(esquema: T) => z.preprocess(desdeTextoEscrito, esquema);
+
+/**
+ * Campo numérico que llega como string desde el formulario.
  *
  * Se redondea a entero porque el catálogo de la tienda guarda precios y stock
  * como enteros (pesos sin centavos, unidades completas).
  */
 const numeroPositivo = (etiqueta: string) =>
-  z.coerce
-    .number({ message: `${etiqueta} tiene que ser un número` })
-    .min(0, `${etiqueta} no puede ser negativo`)
-    .max(99_999_999, `${etiqueta} es demasiado grande`)
-    .transform((n) => Math.round(n))
-    .default(0);
+  z.preprocess(
+    (v) => (v === "" || v === undefined || v === null ? 0 : desdeTextoEscrito(v)),
+    z.coerce
+      .number({ message: `${etiqueta} tiene que ser un número` })
+      .min(0, `${etiqueta} no puede ser negativo`)
+      .max(99_999_999, `${etiqueta} es demasiado grande`)
+      .transform((n) => Math.round(n))
+      .default(0)
+  );
 
 /** Igual que el anterior, pero un campo vacío significa «sin valor», no cero. */
 const numeroOpcional = (etiqueta: string, max = 99_999_999) =>
   z
     .preprocess(
-      (v) => (v === "" || v === undefined || v === null ? null : v),
+      (v) => (v === "" || v === undefined || v === null ? null : desdeTextoEscrito(v)),
       z.coerce
         .number({ message: `${etiqueta} tiene que ser un número` })
         .min(0, `${etiqueta} no puede ser negativo`)
@@ -187,11 +210,13 @@ export const categoriaSchema = z.object({
 
 export const ajusteStockSchema = z.object({
   productoId: z.string().trim().min(1, "Producto inválido").max(64),
-  cantidad: z.coerce
-    .number({ message: "La cantidad tiene que ser un número" })
-    .transform((n) => Math.round(n))
-    .refine((n) => n !== 0, "La cantidad no puede ser cero")
-    .refine((n) => Math.abs(n) <= 1_000_000, "La cantidad es demasiado grande"),
+  cantidad: escrito(
+    z.coerce
+      .number({ message: "La cantidad tiene que ser un número" })
+      .transform((n) => Math.round(n))
+      .refine((n) => n !== 0, "La cantidad no puede ser cero")
+      .refine((n) => Math.abs(n) <= 1_000_000, "La cantidad es demasiado grande")
+  ),
   motivo: z.string().trim().min(1, "Indicá un motivo").max(200, "El motivo es demasiado largo"),
 });
 
@@ -331,23 +356,27 @@ export const METODOS_PAGO_VALIDOS = ["efectivo", "transferencia", "tarjeta", "ot
 export const MAX_RENGLONES_COBRO = 60;
 
 export const aperturaCajaSchema = z.object({
-  fondo: z.coerce
-    .number({ message: "El fondo tiene que ser un número" })
-    .min(0, "El fondo no puede ser negativo")
-    .max(99_999_999, "El fondo es demasiado grande")
-    .transform((n) => Math.round(n))
-    .default(0),
+  fondo: escrito(
+    z.coerce
+      .number({ message: "El fondo tiene que ser un número" })
+      .min(0, "El fondo no puede ser negativo")
+      .max(99_999_999, "El fondo es demasiado grande")
+      .transform((n) => Math.round(n))
+      .default(0)
+  ),
   nota: z.string().trim().max(200).default(""),
 });
 
 export const cierreCajaSchema = z.object({
   cajaId: z.string().trim().min(1, "Caja inválida").max(64),
-  contado: z.coerce
-    .number({ message: "Lo contado tiene que ser un número" })
-    .min(0, "No puede ser negativo")
-    .max(99_999_999, "Es demasiado grande")
-    .transform((n) => Math.round(n))
-    .default(0),
+  contado: escrito(
+    z.coerce
+      .number({ message: "Lo contado tiene que ser un número" })
+      .min(0, "No puede ser negativo")
+      .max(99_999_999, "Es demasiado grande")
+      .transform((n) => Math.round(n))
+      .default(0)
+  ),
   nota: z.string().trim().max(400).default(""),
 });
 
@@ -362,7 +391,7 @@ export const cobroSchema = z.object({
         producto_id: z.string().trim().max(64).nullable().default(null),
         nombre: z.string().trim().min(1, "Falta el nombre de un renglón").max(160),
         unidad_medida: z.string().trim().max(24).default("unidad"),
-        precio: z.coerce.number().min(0).max(99_999_999).transform((n) => Math.round(n)),
+        precio: escrito(z.coerce.number().min(0).max(99_999_999).transform((n) => Math.round(n))),
         cantidad: z.coerce
           .number()
           .int("La cantidad tiene que ser entera")
@@ -382,11 +411,13 @@ export function totalDeCobro(items: { precio: number; cantidad: number }[]): num
 export const movimientoCajaSchema = z.object({
   cajaId: z.string().trim().min(1, "Caja inválida").max(64),
   tipo: z.enum(["retiro", "ingreso"]),
-  monto: z.coerce
-    .number({ message: "El monto tiene que ser un número" })
-    .min(1, "El monto tiene que ser mayor a cero")
-    .max(99_999_999, "El monto es demasiado grande")
-    .transform((n) => Math.round(n)),
+  monto: escrito(
+    z.coerce
+      .number({ message: "El monto tiene que ser un número" })
+      .min(1, "El monto tiene que ser mayor a cero")
+      .max(99_999_999, "El monto es demasiado grande")
+      .transform((n) => Math.round(n))
+  ),
   // El motivo es obligatorio a propósito: un retiro sin motivo es
   // indistinguible de un faltante cuando se mira el cierre a fin de mes.
   motivo: z.string().trim().min(1, "Escribí para qué fue").max(200),
@@ -398,7 +429,7 @@ const rengloneCobro = z.object({
   producto_id: z.string().trim().max(64).nullable().default(null),
   nombre: z.string().trim().min(1, "Falta el nombre de un renglón").max(160),
   unidad_medida: z.string().trim().max(24).default("unidad"),
-  precio: z.coerce.number().min(0).max(99_999_999).transform((n) => Math.round(n)),
+  precio: escrito(z.coerce.number().min(0).max(99_999_999).transform((n) => Math.round(n))),
   cantidad: z.coerce
     .number()
     .int("La cantidad tiene que ser entera")
@@ -408,11 +439,13 @@ const rengloneCobro = z.object({
 
 export const pagoSchema = z.object({
   metodo: z.enum(METODOS_PAGO_VALIDOS),
-  monto: z.coerce
-    .number({ message: "El monto tiene que ser un número" })
-    .min(1, "Cada pago tiene que ser mayor a cero")
-    .max(99_999_999)
-    .transform((n) => Math.round(n)),
+  monto: escrito(
+    z.coerce
+      .number({ message: "El monto tiene que ser un número" })
+      .min(1, "Cada pago tiene que ser mayor a cero")
+      .max(99_999_999)
+      .transform((n) => Math.round(n))
+  ),
 });
 
 export const cobroConPagosSchema = z
@@ -422,7 +455,7 @@ export const cobroConPagosSchema = z
     nombre: z.string().trim().max(160).default(""),
     notas: z.string().trim().max(400).default(""),
     /** Lo que entregó el cliente en efectivo, para calcular el vuelto. */
-    recibido: z.coerce.number().min(0).max(99_999_999).transform((n) => Math.round(n)).default(0),
+    recibido: escrito(z.coerce.number().min(0).max(99_999_999).transform((n) => Math.round(n)).default(0)),
     pagos: z.array(pagoSchema).min(1, "Falta indicar cómo se pagó").max(4),
     items: z
       .array(rengloneCobro)
@@ -540,11 +573,13 @@ export const gastoSchema = z.object({
     .trim()
     .min(1, "Escribí qué se pagó")
     .max(200, "El concepto es demasiado largo"),
-  monto: z.coerce
-    .number({ message: "El monto tiene que ser un número" })
-    .positive("El monto tiene que ser mayor a cero")
-    .max(999_999_999, "Ese monto es demasiado grande")
-    .transform((n) => Math.round(n)),
+  monto: escrito(
+    z.coerce
+      .number({ message: "El monto tiene que ser un número" })
+      .positive("El monto tiene que ser mayor a cero")
+      .max(999_999_999, "Ese monto es demasiado grande")
+      .transform((n) => Math.round(n))
+  ),
   metodo_pago: z.enum(METODOS_PAGO_VALIDOS).default("efectivo"),
   proveedor: textoOpcional(160),
   comprobante: textoOpcional(60),
