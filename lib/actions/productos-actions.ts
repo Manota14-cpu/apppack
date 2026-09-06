@@ -39,6 +39,7 @@ function revalidarTodo() {
   revalidatePath("/informes");
   revalidatePath("/pedidos");
   revalidatePath("/caja");
+  revalidatePath("/clientes");
   revalidatePath("/configuracion");
 }
 

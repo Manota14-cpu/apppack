@@ -17,6 +17,7 @@ import type { Caja, Fecha } from "@/types/database.types";
 
 function revalidarCaja() {
   revalidatePath("/caja");
+  revalidatePath("/clientes");
   revalidatePath("/pedidos");
   revalidatePath("/productos");
   revalidatePath("/movimientos");
@@ -220,6 +221,7 @@ type Renglon = {
 
 type EntradaCobro = {
   cajaId: string;
+  clienteId: string | null;
   nombre: string;
   notas: string;
   recibido: number;
@@ -230,6 +232,7 @@ type EntradaCobro = {
 type EntradaDevolucion = {
   cajaId: string;
   pedidoId: string | null;
+  clienteId: string | null;
   nombre: string;
   notas: string;
   metodoPago: string;
@@ -257,6 +260,7 @@ export async function cobrar(entrada: EntradaCobro) {
       [
         JSON.stringify({
           caja_id: d.cajaId,
+          cliente_id: d.clienteId,
           nombre: d.nombre,
           notas: d.notas,
           recibido: d.recibido,
@@ -301,6 +305,7 @@ export async function devolver(entrada: EntradaDevolucion) {
         JSON.stringify({
           caja_id: d.cajaId,
           pedido_id: d.pedidoId,
+          cliente_id: d.clienteId,
           nombre: d.nombre,
           notas: d.notas,
           metodo_pago: d.metodoPago,

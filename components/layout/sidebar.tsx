@@ -8,6 +8,7 @@ import {
   BarChart3,
   Package,
   ClipboardList,
+  Users,
   Wallet,
   History,
   Settings,
@@ -20,6 +21,7 @@ const navegacion = [
   { nombre: "Productos", href: "/productos", icono: Package },
   { nombre: "Caja", href: "/caja", icono: Wallet },
   { nombre: "Pedidos", href: "/pedidos", icono: ClipboardList },
+  { nombre: "Clientes", href: "/clientes", icono: Users },
   { nombre: "Movimientos", href: "/movimientos", icono: History },
 ];
 

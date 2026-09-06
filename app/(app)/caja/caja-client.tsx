@@ -26,6 +26,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "@/components/ui/select";
 import { LectorCodigo } from "@/components/lector-codigo";
+import { SelectorCliente, type ClienteElegido } from "./selector-cliente";
 import { money } from "@/lib/formato";
 import { useDebounce } from "@/lib/use-debounce";
 import {
@@ -266,7 +267,7 @@ function Mostrador({ caja, onCobrado }: { caja: Caja; onCobrado: () => void }) {
   const busquedaDebounced = useDebounce(busqueda, 250);
   const [resultados, setResultados] = useState<ProductoParaCobrar[]>([]);
   const [items, setItems] = useState<ItemCobro[]>([]);
-  const [nombre, setNombre] = useState("");
+  const [cliente, setCliente] = useState<ClienteElegido>({ id: null, nombre: "" });
   const [notas, setNotas] = useState("");
   const [cobrando, setCobrando] = useState(false);
   const [escanerAbierto, setEscanerAbierto] = useState(false);
@@ -381,7 +382,7 @@ function Mostrador({ caja, onCobrado }: { caja: Caja; onCobrado: () => void }) {
 
   function limpiar() {
     setItems([]);
-    setNombre("");
+    setCliente({ id: null, nombre: "" });
     setNotas("");
     setPagos([{ metodo: "efectivo", monto: "" }]);
     setRecibido("");
@@ -393,7 +394,8 @@ function Mostrador({ caja, onCobrado }: { caja: Caja; onCobrado: () => void }) {
     try {
       const r = await cobrar({
         cajaId: caja.id,
-        nombre,
+        clienteId: cliente.id,
+        nombre: cliente.nombre,
         notas,
         recibido: Number(recibido) || 0,
         pagos: pagosConMontos.filter((p) => p.monto > 0),
@@ -480,16 +482,7 @@ function Mostrador({ caja, onCobrado }: { caja: Caja; onCobrado: () => void }) {
         {items.length > 0 && (
           <>
             <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-1.5">
-                <Label htmlFor="caja-nombre">Cliente</Label>
-                <Input
-                  id="caja-nombre"
-                  value={nombre}
-                  onChange={(e) => setNombre(e.target.value)}
-                  placeholder="Opcional"
-                  maxLength={160}
-                />
-              </div>
+              <SelectorCliente valor={cliente} onCambiar={setCliente} />
               <div className="space-y-1.5">
                 <Label htmlFor="caja-notas">Nota</Label>
                 <Input
@@ -956,7 +949,7 @@ function DevolucionDialog({
   const [resultados, setResultados] = useState<ProductoParaCobrar[]>([]);
   const [items, setItems] = useState<ItemCobro[]>([]);
   const [metodoPago, setMetodoPago] = useState("efectivo");
-  const [nombre, setNombre] = useState("");
+  const [cliente, setCliente] = useState<ClienteElegido>({ id: null, nombre: "" });
   const [notas, setNotas] = useState("");
   const [ocupado, setOcupado] = useState(false);
 
@@ -1005,7 +998,8 @@ function DevolucionDialog({
       const r = await devolver({
         cajaId: caja.id,
         pedidoId: null,
-        nombre,
+        clienteId: cliente.id,
+        nombre: cliente.nombre,
         notas,
         metodoPago,
         items: items.map(({ stock: _stock, ...resto }) => resto),
@@ -1015,7 +1009,7 @@ function DevolucionDialog({
         description: `${money(r.total)} salieron de la caja y la mercadería volvió al stock.`,
       });
       setItems([]);
-      setNombre("");
+      setCliente({ id: null, nombre: "" });
       setNotas("");
       onOpenChange(false);
       onListo();
@@ -1135,16 +1129,7 @@ function DevolucionDialog({
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-1.5">
-              <Label htmlFor="dev-nombre">Cliente</Label>
-              <Input
-                id="dev-nombre"
-                value={nombre}
-                onChange={(e) => setNombre(e.target.value)}
-                placeholder="Opcional"
-                maxLength={160}
-              />
-            </div>
+            <SelectorCliente valor={cliente} onCambiar={setCliente} />
           </div>
 
           <div className="space-y-1.5">

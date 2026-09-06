@@ -417,6 +417,7 @@ export const pagoSchema = z.object({
 export const cobroConPagosSchema = z
   .object({
     cajaId: z.string().trim().min(1, "Caja inválida").max(64),
+    clienteId: z.string().trim().max(64).nullable().default(null),
     nombre: z.string().trim().max(160).default(""),
     notas: z.string().trim().max(400).default(""),
     /** Lo que entregó el cliente en efectivo, para calcular el vuelto. */
@@ -438,6 +439,7 @@ export const devolucionSchema = z.object({
   cajaId: z.string().trim().min(1, "Caja inválida").max(64),
   /** La venta original, si se está devolviendo contra una. */
   pedidoId: z.string().trim().max(64).nullable().default(null),
+  clienteId: z.string().trim().max(64).nullable().default(null),
   nombre: z.string().trim().max(160).default(""),
   notas: z.string().trim().max(400).default(""),
   metodoPago: z.enum(METODOS_PAGO_VALIDOS).default("efectivo"),
@@ -457,4 +459,43 @@ export const edicionPedidoSchema = z.object({
 /** El vuelto. Nunca negativo: si entregó de menos, no hay vuelto que dar. */
 export function calcularVuelto(recibido: number, aPagarEnEfectivo: number): number {
   return Math.max(0, Math.round(recibido) - Math.round(aPagarEnEfectivo));
+}
+
+// ─────────────────────────────  Clientes  ─────────────────────────────
+
+export const clienteSchema = z.object({
+  nombre: z.string().trim().min(1, "El nombre es obligatorio").max(160, "El nombre es demasiado largo"),
+  telefono: textoOpcional(40),
+  email: z
+    .string()
+    .trim()
+    .max(160)
+    .refine(
+      (v) => v === "" || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v),
+      "Ese correo no parece válido"
+    )
+    .transform((v) => (v === "" ? null : v))
+    .nullable()
+    .default(null),
+  ciudad: textoOpcional(80),
+  direccion: textoOpcional(200),
+  dni_cuit: textoOpcional(20),
+  razon_social: textoOpcional(160),
+  notas: textoOpcional(600),
+});
+
+export type DatosCliente = z.infer<typeof clienteSchema>;
+
+/**
+ * Deja el teléfono en solo dígitos, para comparar.
+ *
+ * «3492 30-1333», «03492301333» y «+54 3492 301333» son la misma persona
+ * anotada de tres formas. Sin normalizar, el aviso de duplicado no saltaría
+ * nunca y la agenda se llenaría del mismo cliente repetido.
+ */
+export function soloDigitos(telefono: string | null): string {
+  if (!telefono) return "";
+  const d = telefono.replace(/[^0-9]/g, "");
+  // Se ignoran el código de país y el 0 inicial: lo que identifica es el resto.
+  return d.replace(/^54/, "").replace(/^0/, "");
 }

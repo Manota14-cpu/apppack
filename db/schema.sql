@@ -454,13 +454,19 @@ begin
 
   insert into "Order" (
     id, number, channel, status, nombre, total, "paymentMethod", "cashReceived",
-    "sessionId", notas, "createdAt"
+    "customerId", "sessionId", notas, "createdAt"
   ) values (
     (gen_random_uuid())::text, v_numero, 'mostrador', 'entregado',
-    coalesce(nullif(p->>'nombre', ''), 'Mostrador'),
+    -- El nombre se copia además del vínculo: es cómo se llamaba el cliente ese
+    -- día, y renombrarlo después no debería reescribir un comprobante impreso.
+    coalesce(
+      nullif(p->>'nombre', ''),
+      (select nombre from "Customer" where id = nullif(p->>'cliente_id', '')),
+      'Mostrador'),
     v_total,
     v_etiqueta,
     nullif((p->>'recibido')::int, 0),
+    nullif(p->>'cliente_id', ''),
     v_caja,
     nullif(p->>'notas', ''),
     now()
@@ -536,12 +542,16 @@ begin
 
   insert into "Order" (
     id, number, channel, status, nombre, total, "paymentMethod",
-    "sessionId", notas, "createdAt"
+    "customerId", "sessionId", notas, "createdAt"
   ) values (
     (gen_random_uuid())::text, v_numero, 'devolucion', 'entregado',
-    coalesce(nullif(p->>'nombre', ''), 'Devolución'),
+    coalesce(
+      nullif(p->>'nombre', ''),
+      (select nombre from "Customer" where id = nullif(p->>'cliente_id', '')),
+      'Devolución'),
     -v_total,
     coalesce(nullif(p->>'metodo_pago', ''), 'efectivo'),
+    nullif(p->>'cliente_id', ''),
     v_caja,
     nullif(
       trim(coalesce(p->>'notas', '') ||

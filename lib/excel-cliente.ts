@@ -759,3 +759,76 @@ export async function descargarCaja(caja: CajaExportable) {
   const libro = await construirLibroCaja(caja);
   await descargar(libro, `apppack-caja-${caja.numero}-${soloElDia(caja.opened_at)}.xlsx`);
 }
+
+// ─────────────────────────────  Clientes  ─────────────────────────────
+
+export interface ClienteExportable {
+  nombre: string;
+  telefono: string | null;
+  email: string | null;
+  ciudad: string | null;
+  direccion: string | null;
+  dni_cuit: string | null;
+  razon_social: string | null;
+  notas: string | null;
+  compras: number;
+  gastado: number;
+  ultima_compra: Fecha | null;
+}
+
+const COLUMNAS_CLIENTES: Columna[] = [
+  { titulo: "Nombre", clave: "nombre", ancho: 30 },
+  { titulo: "Teléfono", clave: "telefono", ancho: 18 },
+  { titulo: "Correo", clave: "email", ancho: 30 },
+  { titulo: "Ciudad", clave: "ciudad", ancho: 18 },
+  { titulo: "Dirección", clave: "direccion", ancho: 30 },
+  { titulo: "DNI o CUIT", clave: "dni_cuit", ancho: 16 },
+  { titulo: "Razón social", clave: "razon_social", ancho: 26 },
+  { titulo: "Compras", clave: "compras", ancho: 11, formato: ENTERO, alinear: "right" },
+  { titulo: "Total gastado", clave: "gastado", ancho: 15, formato: PESOS, alinear: "right" },
+  { titulo: "Última compra", clave: "ultima", ancho: 16, formato: FECHA_HORA },
+  { titulo: "Notas", clave: "notas", ancho: 34 },
+];
+
+/** La agenda, con lo que compró cada uno. */
+export async function construirLibroClientes(clientes: ClienteExportable[]): Promise<Libro> {
+  const ExcelJS = (await import("exceljs")).default;
+  const libro = new ExcelJS.Workbook();
+  const hoja = libro.addWorksheet("Clientes");
+
+  encabezar(hoja, COLUMNAS_CLIENTES);
+
+  for (const c of clientes) {
+    hoja.addRow({
+      nombre: c.nombre,
+      telefono: c.telefono ?? "",
+      email: c.email ?? "",
+      ciudad: c.ciudad ?? "",
+      direccion: c.direccion ?? "",
+      dni_cuit: c.dni_cuit ?? "",
+      razon_social: c.razon_social ?? "",
+      compras: c.compras,
+      gastado: c.gastado,
+      // Vacío en vez de un guion: así la columna se puede ordenar por fecha.
+      ultima: c.ultima_compra ? new Date(c.ultima_compra) : null,
+      notas: c.notas ?? "",
+    });
+  }
+
+  pintarCuerpo(hoja, COLUMNAS_CLIENTES, 2, clientes.length + 1);
+
+  if (clientes.length > 0) {
+    totalizar(hoja, COLUMNAS_CLIENTES, {
+      nombre: `${clientes.length} ${clientes.length === 1 ? "cliente" : "clientes"}`,
+      compras: clientes.reduce((s, c) => s + c.compras, 0),
+      gastado: clientes.reduce((s, c) => s + c.gastado, 0),
+    });
+  }
+
+  return libro;
+}
+
+export async function descargarClientes(clientes: ClienteExportable[]) {
+  const libro = await construirLibroClientes(clientes);
+  await descargar(libro, `apppack-clientes-${soloElDia(new Date())}.xlsx`);
+}

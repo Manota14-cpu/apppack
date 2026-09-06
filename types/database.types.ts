@@ -279,3 +279,36 @@ export interface EstadoMigracion {
   ok: boolean;
   detalle: string | null;
 }
+
+// ─────────────────────────────  Clientes  ─────────────────────────────
+
+export interface Cliente {
+  id: string;
+  nombre: string;
+  telefono: string | null;
+  email: string | null;
+  ciudad: string | null;
+  direccion: string | null;
+  dni_cuit: string | null;
+  razon_social: string | null;
+  notas: string | null;
+  activo: boolean;
+  created_at: Fecha;
+  /** Cuántas veces compró, sin contar lo cancelado. */
+  compras: number;
+  /** Cuánto gastó en total. Las devoluciones restan. */
+  gastado: number;
+  /** Última compra, para saber si hace rato que no viene. */
+  ultima_compra: Fecha | null;
+}
+
+/** Una compra en la ficha del cliente. */
+export interface CompraCliente {
+  id: string;
+  numero: number;
+  canal: string;
+  estado: string;
+  total: number;
+  created_at: Fecha;
+  renglones: number;
+}
