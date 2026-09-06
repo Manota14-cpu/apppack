@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { VALORES_CATEGORIA_GASTO } from "@/lib/gastos";
 
 /**
  * Campo numérico que llega como string desde un <input type="number">.
@@ -499,3 +500,61 @@ export function soloDigitos(telefono: string | null): string {
   // Se ignoran el código de país y el 0 inicial: lo que identifica es el resto.
   return d.replace(/^54/, "").replace(/^0/, "");
 }
+
+// ──────────────────────────────  Gastos  ──────────────────────────────
+
+/**
+ * Una fecha aaaa-mm-dd que existe de verdad.
+ *
+ * El `Date` de JS acomoda lo imposible en silencio: «2026-02-31» se convierte
+ * en el 3 de marzo sin avisar. Por eso, además de parsear, se compara contra
+ * lo que se escribió.
+ */
+const fechaSchema = z
+  .string()
+  .trim()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "La fecha tiene que ser un día del calendario")
+  .refine((v) => {
+    const [a, m, d] = v.split("-").map(Number);
+    const fecha = new Date(a!, m! - 1, d!);
+    return (
+      fecha.getFullYear() === a && fecha.getMonth() === m! - 1 && fecha.getDate() === d
+    );
+  }, "Ese día no existe")
+  .refine((v) => {
+    // Un día de margen cubre la diferencia horaria entre el navegador y el
+    // servidor. Más allá de eso es un error de tipeo —un año mal escrito
+    // ensuciaría los informes por meses sin que nadie lo note.
+    const limite = new Date();
+    limite.setDate(limite.getDate() + 1);
+    return new Date(`${v}T00:00:00`) <= limite;
+  }, "Esa fecha todavía no llegó");
+
+export const gastoSchema = z.object({
+  fecha: fechaSchema,
+  categoria: z.enum(VALORES_CATEGORIA_GASTO as [string, ...string[]], {
+    message: "Elegí una categoría",
+  }),
+  concepto: z
+    .string()
+    .trim()
+    .min(1, "Escribí qué se pagó")
+    .max(200, "El concepto es demasiado largo"),
+  monto: z.coerce
+    .number({ message: "El monto tiene que ser un número" })
+    .positive("El monto tiene que ser mayor a cero")
+    .max(999_999_999, "Ese monto es demasiado grande")
+    .transform((n) => Math.round(n)),
+  metodo_pago: z.enum(METODOS_PAGO_VALIDOS).default("efectivo"),
+  proveedor: textoOpcional(160),
+  comprobante: textoOpcional(60),
+  notas: textoOpcional(600),
+  /**
+   * El turno del que sale la plata. Solo tiene sentido en efectivo: una
+   * transferencia no vacía el cajón, y descontarla del arqueo haría que el
+   * cierre diera de menos.
+   */
+  caja_id: textoOpcional(64),
+});
+
+export type DatosGasto = z.infer<typeof gastoSchema>;

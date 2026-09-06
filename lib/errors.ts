@@ -57,6 +57,14 @@ export function mensajeDeError(error: unknown, contexto: string): string {
   const negocio = DE_NEGOCIO.find((m) => original.includes(m));
   if (negocio) return original.slice(original.indexOf(negocio));
 
+  // P0001 es el código de `raise exception`, y en este proyecto lo emiten solo
+  // las funciones de `db/schema.sql` — siempre con una frase escrita a
+  // propósito para quien está mirando la pantalla ("La caja no está abierta",
+  // "Ya hay una caja abierta. Cerrala antes de abrir otra"). Sin esta línea,
+  // esas explicaciones se cambiaban por el genérico de más abajo y el usuario
+  // veía "no se pudo" sin enterarse nunca de por qué.
+  if (err.code === "P0001" && original) return original;
+
   if (err.constraint && POR_CONSTRAINT[err.constraint]) return POR_CONSTRAINT[err.constraint]!;
   if (err.code && POR_CODIGO[err.code]) return POR_CODIGO[err.code]!;
 

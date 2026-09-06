@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
-import { Plus, BarChart3, History, Settings, Users } from "lucide-react";
+import { Plus, BarChart3, History, Receipt, Settings, Users } from "lucide-react";
 
 const acciones = [
   { label: "Nuevo producto", icono: Plus, href: "/productos", variant: "default" as const },
@@ -11,6 +11,7 @@ const acciones = [
   // Informes desde el teléfono.
   { label: "Informes", icono: BarChart3, href: "/informes", variant: "secondary" as const },
   { label: "Clientes", icono: Users, href: "/clientes", variant: "secondary" as const },
+  { label: "Gastos", icono: Receipt, href: "/gastos", variant: "secondary" as const },
   { label: "Ver movimientos", icono: History, href: "/movimientos", variant: "secondary" as const },
   { label: "Configuración", icono: Settings, href: "/configuracion", variant: "secondary" as const },
 ];

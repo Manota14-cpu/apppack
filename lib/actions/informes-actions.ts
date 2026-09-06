@@ -4,6 +4,7 @@ import { requerirSesion } from "@/lib/guard";
 import { consultar, consultarUna } from "@/lib/db";
 import type { Informe, Inmovilizado, VentaProducto } from "@/lib/informes";
 import { PERIODOS } from "@/lib/informes";
+import { cuentaEnResultado } from "@/lib/gastos";
 
 function diasValidos(dias: number): number {
   return (PERIODOS as readonly number[]).includes(dias) ? dias : 30;
@@ -24,7 +25,7 @@ export async function obtenerInforme(dias: number): Promise<Informe> {
   // `0` significa «todo»: se usa una fecha imposible de superar hacia atrás.
   const desde = d === 0 ? "1970-01-01" : new Date(Date.now() - d * 86_400_000).toISOString();
 
-  const [resumen, porProducto, inmovilizado, movimientos, porCanal] = await Promise.all([
+  const [resumen, porProducto, inmovilizado, movimientos, porCanal, gastos] = await Promise.all([
     consultarUna<{
       pedidos: number;
       unidades: number;
@@ -124,6 +125,18 @@ export async function obtenerInforme(dias: number): Promise<Informe> {
         order by sum(total) desc`,
       [desde]
     ),
+
+    // Los gastos se agrupan en la base y se clasifican en TypeScript: qué
+    // categorías se restan del resultado es una regla del negocio, y tenerla
+    // en un solo lugar evita que la pantalla y la planilla den distinto.
+    consultar<{ categoria: string; total: number; cantidad: number }>(
+      `select categoria, sum(monto)::bigint as total, count(*)::int as cantidad
+         from "Expense"
+        where fecha >= $1::date
+        group by categoria
+        order by sum(monto) desc`,
+      [desde.slice(0, 10)]
+    ),
   ]);
 
   const ingreso = Number(resumen?.ingreso ?? 0);
@@ -131,6 +144,18 @@ export async function obtenerInforme(dias: number): Promise<Informe> {
   const pedidos = resumen?.pedidos ?? 0;
 
   const capitalQuieto = inmovilizado.reduce((s, p) => s + Number(p.capital), 0);
+
+  const porCategoria = gastos.map((g) => ({ ...g, total: Number(g.total) }));
+  let gastadoTotal = 0;
+  let gastadoOperativo = 0;
+  let gastadoMercaderia = 0;
+  let cantidadGastos = 0;
+  for (const g of porCategoria) {
+    gastadoTotal += g.total;
+    cantidadGastos += g.cantidad;
+    if (cuentaEnResultado(g.categoria)) gastadoOperativo += g.total;
+    else gastadoMercaderia += g.total;
+  }
 
   return {
     dias: d,
@@ -154,5 +179,13 @@ export async function obtenerInforme(dias: number): Promise<Informe> {
     salidasSinPrecio: resumen?.salidas_sin_precio ?? 0,
     ventasConCostoDudoso: resumen?.costo_dudoso ?? 0,
     porCanal: porCanal.map((c) => ({ ...c, ingreso: Number(c.ingreso) })),
+    gastos: {
+      total: gastadoTotal,
+      operativos: gastadoOperativo,
+      mercaderia: gastadoMercaderia,
+      cantidad: cantidadGastos,
+      porCategoria,
+    },
+    resultado: pedidos > 0 ? ingreso - costo - gastadoOperativo : null,
   };
 }

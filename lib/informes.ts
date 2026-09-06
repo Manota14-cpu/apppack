@@ -75,4 +75,26 @@ export interface Informe {
    * negativo, así que restan del canal que corresponda.
    */
   porCanal: { canal: string; pedidos: number; ingreso: number }[];
+  /**
+   * Lo que se pagó en el período para tener el negocio abierto.
+   *
+   * `operativos` deja afuera las compras de mercadería a propósito: esos pesos
+   * no se perdieron, se cambiaron por stock, y se convierten en costo recién
+   * cuando ese stock se vende — momento en el que ya los cuenta `ventas.costo`.
+   * Restarlos también acá sería contar la misma plata dos veces.
+   */
+  gastos: {
+    total: number;
+    operativos: number;
+    mercaderia: number;
+    cantidad: number;
+    porCategoria: { categoria: string; total: number; cantidad: number }[];
+  };
+  /**
+   * Lo vendido, menos lo que costó, menos lo que costó tener abierto.
+   *
+   * Null cuando no hubo ventas: un resultado negativo puro de gastos no es
+   * información, es un período sin actividad.
+   */
+  resultado: number | null;
 }

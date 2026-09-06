@@ -8,7 +8,13 @@ export default defineConfig({
     include: ["tests/**/*.test.ts"],
   },
   resolve: {
-    // Permite que los tests importen el código real con el alias "@/".
-    alias: { "@": fileURLToPath(new URL("./", import.meta.url)) },
+    alias: {
+      // Permite que los tests importen el código real con el alias "@/".
+      "@": fileURLToPath(new URL("./", import.meta.url)),
+      // Sin esto, cualquier módulo de servidor queda fuera del alcance de los
+      // tests: `server-only` está pensado para el empaquetado de Next y en
+      // Node lanza al importarse.
+      "server-only": fileURLToPath(new URL("./tests/stubs/server-only.ts", import.meta.url)),
+    },
   },
 });

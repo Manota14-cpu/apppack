@@ -8,6 +8,8 @@
  * exceljs se carga con import dinámico para que no pese en el bundle inicial.
  */
 
+import { cuentaEnResultado, etiquetaCategoria, fechaLocal, resumirGastos } from "@/lib/gastos";
+
 export interface FilaCatalogo {
   nombre: string;
   sku?: string;
@@ -831,4 +833,128 @@ export async function construirLibroClientes(clientes: ClienteExportable[]): Pro
 export async function descargarClientes(clientes: ClienteExportable[]) {
   const libro = await construirLibroClientes(clientes);
   await descargar(libro, `apppack-clientes-${soloElDia(new Date())}.xlsx`);
+}
+
+// ──────────────────────────────  Gastos  ──────────────────────────────
+
+export interface GastoExportable {
+  /** aaaa-mm-dd */
+  fecha: string;
+  categoria: string;
+  concepto: string;
+  monto: number;
+  metodo_pago: string;
+  proveedor: string | null;
+  comprobante: string | null;
+  notas: string | null;
+  caja_numero: number | null;
+}
+
+const FECHA_SOLA = "dd/mm/yyyy";
+
+const COLUMNAS_GASTOS: Columna[] = [
+  { titulo: "Fecha", clave: "fecha", ancho: 12, formato: FECHA_SOLA },
+  { titulo: "Concepto", clave: "concepto", ancho: 38 },
+  { titulo: "Categoría", clave: "categoria", ancho: 24 },
+  { titulo: "Monto", clave: "monto", ancho: 14, formato: PESOS, alinear: "right" },
+  { titulo: "Cómo se pagó", clave: "metodo", ancho: 16 },
+  { titulo: "Proveedor", clave: "proveedor", ancho: 26 },
+  { titulo: "Comprobante", clave: "comprobante", ancho: 16 },
+  { titulo: "Salió de la caja", clave: "caja", ancho: 15, alinear: "center" },
+  { titulo: "Notas", clave: "notas", ancho: 34 },
+];
+
+const COLUMNAS_RESUMEN_GASTOS: Columna[] = [
+  { titulo: "Categoría", clave: "categoria", ancho: 28 },
+  { titulo: "Gastos", clave: "cantidad", ancho: 10, formato: ENTERO, alinear: "right" },
+  { titulo: "Total", clave: "total", ancho: 16, formato: PESOS, alinear: "right" },
+  { titulo: "Cuenta en el resultado", clave: "cuenta", ancho: 22, alinear: "center" },
+];
+
+/**
+ * Los gastos del período, con un resumen por categoría en su propia hoja.
+ *
+ * El resumen va aparte y no al pie del detalle para que la primera hoja siga
+ * siendo una tabla pareja: una fila de totales en el medio rompe el orden y el
+ * filtro, que es lo primero que uno usa al abrir el archivo.
+ */
+export async function construirLibroGastos(
+  gastos: GastoExportable[],
+  periodo: string
+): Promise<Libro> {
+  const ExcelJS = (await import("exceljs")).default;
+  const libro = new ExcelJS.Workbook();
+  const hoja = libro.addWorksheet("Gastos");
+
+  encabezar(hoja, COLUMNAS_GASTOS);
+
+  for (const g of gastos) {
+    hoja.addRow({
+      fecha: fechaLocal(g.fecha),
+      concepto: g.concepto,
+      categoria: etiquetaCategoria(g.categoria),
+      monto: g.monto,
+      metodo: ETIQUETA_MEDIO[g.metodo_pago] ?? comoTitulo(g.metodo_pago),
+      proveedor: g.proveedor ?? "",
+      comprobante: g.comprobante ?? "",
+      caja: g.caja_numero ? `#${g.caja_numero}` : "",
+      notas: g.notas ?? "",
+    });
+  }
+
+  pintarCuerpo(hoja, COLUMNAS_GASTOS, 2, gastos.length + 1);
+
+  if (gastos.length > 0) {
+    totalizar(hoja, COLUMNAS_GASTOS, {
+      concepto: `${gastos.length} ${gastos.length === 1 ? "gasto" : "gastos"}`,
+      monto: gastos.reduce((s, g) => s + g.monto, 0),
+    });
+  }
+
+  // Resumen
+  const resumen = resumirGastos(gastos);
+  const hoja2 = libro.addWorksheet("Resumen");
+
+  titulo(hoja2, `Gastos · ${periodo}`, COLUMNAS_RESUMEN_GASTOS.length);
+  dato(hoja2, "Total anotado", resumen.total, PESOS);
+  dato(hoja2, "Costo de tener abierto", resumen.operativos, PESOS);
+  dato(hoja2, "Compras de mercadería", resumen.mercaderia, PESOS);
+  hoja2.addRow([]);
+
+  // La aclaración va en el archivo y no solo en la pantalla: el Excel se
+  // manda por mail y se lee sin la app al lado.
+  const nota = hoja2.addRow([
+    "La mercadería no se resta del resultado: son pesos cambiados por stock, y se cuentan como costo recién cuando ese stock se vende.",
+  ]);
+  hoja2.mergeCells(nota.number, 1, nota.number, COLUMNAS_RESUMEN_GASTOS.length);
+  nota.getCell(1).font = { italic: true, size: 10, color: { argb: "FF55605A" } };
+  nota.getCell(1).alignment = { wrapText: true, vertical: "middle" };
+  nota.height = 28;
+  hoja2.addRow([]);
+
+  const filaEncabezado = hoja2.rowCount + 1;
+  encabezar(hoja2, COLUMNAS_RESUMEN_GASTOS, filaEncabezado);
+
+  for (const c of resumen.porCategoria) {
+    hoja2.addRow({
+      categoria: etiquetaCategoria(c.categoria),
+      cantidad: c.cantidad,
+      total: c.total,
+      cuenta: cuentaEnResultado(c.categoria) ? "Sí" : "No",
+    });
+  }
+
+  pintarCuerpo(
+    hoja2,
+    COLUMNAS_RESUMEN_GASTOS,
+    filaEncabezado + 1,
+    filaEncabezado + resumen.porCategoria.length
+  );
+
+  return libro;
+}
+
+export async function descargarGastos(gastos: GastoExportable[], periodo: string) {
+  const libro = await construirLibroGastos(gastos, periodo);
+  await descargar(libro, `apppack-gastos-${soloElDia(new Date())}.xlsx`);
 }

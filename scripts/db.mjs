@@ -66,6 +66,10 @@ const PIEZAS = `
     to_regprocedure('public.editar_pedido(text,jsonb)')               is not null as "función editar_pedido",
     to_regprocedure('public.mover_caja(text,text,int,text)')          is not null as "función mover_caja",
     to_regprocedure('public.cerrar_caja(text,int,text)')              is not null as "función cerrar_caja",
+    to_regclass('public."Expense"')       is not null as "tabla Expense",
+    to_regprocedure('public.registrar_gasto(jsonb)')                  is not null as "función registrar_gasto",
+    to_regprocedure('public.editar_gasto(text,jsonb)')                is not null as "función editar_gasto",
+    to_regprocedure('public.borrar_gasto(text)')                      is not null as "función borrar_gasto",
     to_regprocedure('public.metricas_stock()')                        is not null as "función metricas_stock",
     exists (select 1 from pg_trigger
              where tgname = 'apppack_precio_historial' and not tgisinternal) as "disparador de precios"

@@ -265,6 +265,34 @@ export interface ItemCobro {
   stock: number;
 }
 
+// ──────────────────────────────  Gastos  ──────────────────────────────
+
+/**
+ * Un gasto anotado.
+ *
+ * `fecha` llega como aaaa-mm-dd y no como Date a propósito: la columna es
+ * `date`, y dejar que el driver la convierta a un Date con hora la corría un
+ * día para atrás en Argentina. Como texto no hay zona horaria que la mueva.
+ */
+export interface Gasto {
+  id: string;
+  /** aaaa-mm-dd */
+  fecha: string;
+  categoria: string;
+  concepto: string;
+  monto: number;
+  metodo_pago: string;
+  proveedor: string | null;
+  comprobante: string | null;
+  notas: string | null;
+  /** El turno del que salió la plata, si se pagó del cajón. */
+  caja_id: string | null;
+  caja_numero: number | null;
+  /** Si ese turno sigue abierto. Con la caja cerrada, el gasto ya no se toca. */
+  caja_abierta: boolean;
+  created_at: Fecha;
+}
+
 // ─────────────────────────────  Imágenes  ─────────────────────────────
 
 export interface ImagenProducto {

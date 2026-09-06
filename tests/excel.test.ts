@@ -3,6 +3,8 @@ import {
   construirLibroCatalogo,
   construirLibroPlantilla,
   leerCatalogo,
+  construirLibroGastos,
+  type GastoExportable,
   type ProductoCatalogo,
 } from "@/lib/excel-cliente";
 
@@ -103,5 +105,78 @@ describe("la plantilla se puede completar e importar", () => {
     const libro = await construirLibroPlantilla();
     expect(libro.worksheets[0]!.name).toBe("Productos");
     expect(libro.worksheets.map((h) => h.name)).toContain("Instrucciones");
+  });
+});
+
+describe("planilla de gastos", () => {
+  const gastos: GastoExportable[] = [
+    {
+      fecha: "2026-09-05",
+      categoria: "envios",
+      concepto: "Flete a Rafaela",
+      monto: 15000,
+      metodo_pago: "efectivo",
+      proveedor: "Transportes Belgrano",
+      comprobante: "R-0087",
+      notas: null,
+      caja_numero: 2,
+    },
+    {
+      fecha: "2026-09-01",
+      categoria: "mercaderia",
+      concepto: "Compra de bolsas",
+      monto: 80000,
+      metodo_pago: "transferencia",
+      proveedor: null,
+      comprobante: null,
+      notas: null,
+      caja_numero: null,
+    },
+  ];
+
+  it("escribe la fecha como fecha, no como texto", async () => {
+    // Guardada como texto no se puede ordenar ni filtrar por rango, que es lo
+    // primero que uno hace al abrir el archivo.
+    const hoja = (await construirLibroGastos(gastos, "Últimos 90 días")).getWorksheet("Gastos")!;
+    const celda = hoja.getRow(2).getCell(1).value;
+    expect(celda).toBeInstanceOf(Date);
+    expect((celda as Date).getDate()).toBe(5);
+    expect((celda as Date).getMonth()).toBe(8);
+  });
+
+  it("muestra la categoría en castellano, no el valor de la base", async () => {
+    const hoja = (await construirLibroGastos(gastos, "x")).getWorksheet("Gastos")!;
+    expect(hoja.getRow(2).getCell(3).value).toBe("Envíos y fletes");
+  });
+
+  it("el pie suma todos los gastos", async () => {
+    const hoja = (await construirLibroGastos(gastos, "x")).getWorksheet("Gastos")!;
+    expect(hoja.getRow(4).getCell(4).value).toBe(95_000);
+  });
+
+  it("el resumen separa la mercadería del costo de tener abierto", async () => {
+    const hoja = (await construirLibroGastos(gastos, "Últimos 90 días")).getWorksheet("Resumen")!;
+    const filas: unknown[] = [];
+    hoja.eachRow((f) => filas.push(f.getCell(2).value));
+    expect(filas).toContain(95_000); // total
+    expect(filas).toContain(15_000); // operativos
+    expect(filas).toContain(80_000); // mercadería
+  });
+
+  it("dice cuáles categorías restan del resultado", async () => {
+    const hoja = (await construirLibroGastos(gastos, "x")).getWorksheet("Resumen")!;
+    const texto = JSON.stringify(hoja.getSheetValues());
+    // La columna marca cuáles restan, y la aclaración explica por qué la
+    // mercadería no: el archivo se manda por mail y se lee sin la app al lado.
+    expect(texto).toContain('"Mercadería y proveedores",1,80000,"No"');
+    expect(texto).toContain('"Envíos y fletes",1,15000,"Sí"');
+    expect(texto).toContain("no se resta del resultado");
+  });
+
+  it("sin gastos no rompe ni inventa una fila de totales", async () => {
+    const libro = await construirLibroGastos([], "x");
+    const hoja = libro.getWorksheet("Gastos")!;
+    expect(hoja.rowCount).toBe(1); // solo el encabezado
+    expect(libro.getWorksheet("Resumen")).toBeDefined();
   });
 });

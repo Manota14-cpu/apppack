@@ -10,6 +10,7 @@ import {
   ClipboardList,
   Users,
   Wallet,
+  Receipt,
   History,
   Settings,
 } from "lucide-react";
@@ -22,6 +23,7 @@ const navegacion = [
   { nombre: "Caja", href: "/caja", icono: Wallet },
   { nombre: "Pedidos", href: "/pedidos", icono: ClipboardList },
   { nombre: "Clientes", href: "/clientes", icono: Users },
+  { nombre: "Gastos", href: "/gastos", icono: Receipt },
   { nombre: "Movimientos", href: "/movimientos", icono: History },
 ];
 

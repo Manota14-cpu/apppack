@@ -14,6 +14,18 @@ pg.types.setTypeParser(1700, (v) => (v === null ? null : Number.parseFloat(v)));
 pg.types.setTypeParser(20, (v) => (v === null ? null : Number.parseInt(v, 10))); // int8 / count()
 
 /**
+ * Las columnas de fecha son `timestamp without time zone` y guardan UTC —así
+ * las escribe Prisma, y así las escribe `now()` con la sesión en GMT—. Pero al
+ * no llevar zona, el driver las interpretaba como hora de la máquina que las
+ * lee: en Argentina eso corría todo tres horas hacia adelante y una venta de
+ * las tres de la tarde figuraba a las seis. Se marca explícitamente como UTC
+ * para que el navegador la muestre en la hora que realmente fue.
+ */
+pg.types.setTypeParser(1114, (v) =>
+  v === null ? null : new Date(`${v.replace(" ", "T")}Z`)
+); // timestamp sin zona
+
+/**
  * Conexión a Postgres.
  *
  * Reemplaza al cliente de Supabase: ahora se habla con la base por el protocolo

@@ -46,7 +46,11 @@ const CAMPOS_CAJA = `
              'id', o.id, 'numero', o.number, 'nombre', o.nombre,
              'total', o.total, 'canal', o.channel,
              'metodo_pago', coalesce(o."paymentMethod", 'efectivo'),
-             'notas', o.notas, 'created_at', o."createdAt",
+             -- El "at time zone UTC" no cambia el instante: le pone la zona
+             -- que la columna ya tenía implícita. Sin eso, dentro del JSON la
+             -- fecha viaja sin zona y el navegador la lee como hora local,
+             -- mostrando las ventas tres horas más tarde de lo que fueron.
+             'notas', o.notas, 'created_at', o."createdAt" at time zone 'UTC',
              'renglones', (select count(*)::int from "OrderItem" i where i."orderId" = o.id),
              'unidades', (select coalesce(sum(i.quantity), 0)::int from "OrderItem" i where i."orderId" = o.id)
            ) order by o.number desc)
@@ -74,7 +78,7 @@ const CAMPOS_CAJA = `
   coalesce((
     select jsonb_agg(jsonb_build_object(
              'id', m.id, 'tipo', m.type, 'monto', m.amount,
-             'motivo', m.reason, 'created_at', m."createdAt"
+             'motivo', m.reason, 'created_at', m."createdAt" at time zone 'UTC'
            ) order by m."createdAt" desc)
       from "CashMovement" m where m."sessionId" = c.id
   ), '[]'::jsonb) as movimientos,

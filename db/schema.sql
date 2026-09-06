@@ -832,6 +832,172 @@ as $$
 $$;
 
 -- ---------------------------------------------------------------------
+-- Gastos
+-- ---------------------------------------------------------------------
+-- Un gasto que se pagó con la plata del cajón tiene que dejar su retiro en la
+-- caja. Por eso esto vive en la base y no en el servidor: si el gasto se
+-- guardara y el retiro fallara, el cierre marcaría un faltante que nadie
+-- podría explicar — y la diferencia del arqueo es el único número por el que
+-- vale la pena abrir un turno. Dentro de una función son la misma operación:
+-- se guardan las dos o ninguna.
+
+create or replace function registrar_gasto(p jsonb)
+returns text
+language plpgsql
+as $$
+declare
+  v_id    text;
+  v_mov   text;
+  v_caja  text;
+  v_monto int := (p->>'monto')::int;
+begin
+  if coalesce(v_monto, 0) <= 0 then
+    raise exception 'El monto del gasto tiene que ser mayor a cero.' using errcode = 'P0001';
+  end if;
+
+  v_caja := nullif(p->>'caja_id', '');
+
+  if v_caja is not null then
+    if not exists (select 1 from "CashSession" where id = v_caja and status = 'abierta') then
+      raise exception 'La caja no está abierta, así que el gasto no puede salir de ella.'
+        using errcode = 'P0001';
+    end if;
+
+    insert into "CashMovement" ("sessionId", type, amount, reason)
+    values (v_caja, 'retiro', v_monto, 'Gasto: ' || (p->>'concepto'))
+    returning id into v_mov;
+  end if;
+
+  insert into "Expense" (
+    fecha, categoria, concepto, monto, "metodoPago",
+    proveedor, comprobante, notas, "sessionId", "movementId", "updatedAt"
+  ) values (
+    (p->>'fecha')::date,
+    p->>'categoria',
+    p->>'concepto',
+    v_monto,
+    coalesce(nullif(p->>'metodo_pago', ''), 'efectivo'),
+    nullif(p->>'proveedor', ''),
+    nullif(p->>'comprobante', ''),
+    nullif(p->>'notas', ''),
+    v_caja,
+    v_mov,
+    now()
+  ) returning id into v_id;
+
+  return v_id;
+end;
+$$;
+
+-- Edita un gasto y deja el retiro de la caja de acuerdo con lo editado.
+--
+-- Un gasto que salió de una caja YA CERRADA no se toca: su arqueo se hizo con
+-- ese importe y alguien lo dio por bueno. Cambiarlo ahora reescribiría un
+-- cierre pasado sin dejar rastro, así que se pide anotar el ajuste aparte.
+create or replace function editar_gasto(p_id text, p jsonb)
+returns void
+language plpgsql
+as $$
+declare
+  v_mov    text;
+  v_estado text;
+  v_nueva  text;
+  v_monto  int := (p->>'monto')::int;
+begin
+  if coalesce(v_monto, 0) <= 0 then
+    raise exception 'El monto del gasto tiene que ser mayor a cero.' using errcode = 'P0001';
+  end if;
+
+  select e."movementId", s.status
+    into v_mov, v_estado
+    from "Expense" e
+    left join "CashSession" s on s.id = e."sessionId"
+   where e.id = p_id
+   for update of e;
+
+  if not found then
+    raise exception 'Ese gasto ya no existe.' using errcode = 'P0001';
+  end if;
+
+  if v_mov is not null and v_estado is distinct from 'abierta' then
+    raise exception 'Este gasto salió de una caja que ya se cerró y su arqueo lo contó. Anotá el ajuste como un gasto nuevo en vez de cambiar este.'
+      using errcode = 'P0001';
+  end if;
+
+  v_nueva := nullif(p->>'caja_id', '');
+  if v_nueva is not null
+     and not exists (select 1 from "CashSession" where id = v_nueva and status = 'abierta') then
+    raise exception 'La caja no está abierta, así que el gasto no puede salir de ella.'
+      using errcode = 'P0001';
+  end if;
+
+  if v_mov is not null and v_nueva is null then
+    -- Dejó de pagarse con la plata del cajón: el retiro ya no corresponde.
+    delete from "CashMovement" where id = v_mov;
+    v_mov := null;
+  elsif v_mov is not null then
+    update "CashMovement"
+       set amount = v_monto,
+           reason = 'Gasto: ' || (p->>'concepto')
+     where id = v_mov;
+  elsif v_nueva is not null then
+    insert into "CashMovement" ("sessionId", type, amount, reason)
+    values (v_nueva, 'retiro', v_monto, 'Gasto: ' || (p->>'concepto'))
+    returning id into v_mov;
+  end if;
+
+  update "Expense" set
+    fecha        = (p->>'fecha')::date,
+    categoria    = p->>'categoria',
+    concepto     = p->>'concepto',
+    monto        = v_monto,
+    "metodoPago" = coalesce(nullif(p->>'metodo_pago', ''), 'efectivo'),
+    proveedor    = nullif(p->>'proveedor', ''),
+    comprobante  = nullif(p->>'comprobante', ''),
+    notas        = nullif(p->>'notas', ''),
+    "sessionId"  = v_nueva,
+    "movementId" = v_mov,
+    "updatedAt"  = now()
+  where id = p_id;
+end;
+$$;
+
+create or replace function borrar_gasto(p_id text)
+returns void
+language plpgsql
+as $$
+declare
+  v_mov    text;
+  v_estado text;
+begin
+  select e."movementId", s.status
+    into v_mov, v_estado
+    from "Expense" e
+    left join "CashSession" s on s.id = e."sessionId"
+   where e.id = p_id
+   for update of e;
+
+  if not found then
+    raise exception 'Ese gasto ya no existe.' using errcode = 'P0001';
+  end if;
+
+  if v_mov is not null and v_estado is distinct from 'abierta' then
+    raise exception 'Este gasto salió de una caja que ya se cerró y no se puede borrar: su arqueo ya lo contó.'
+      using errcode = 'P0001';
+  end if;
+
+  -- El retiro se va con el gasto: son la misma plata anotada en dos lugares, y
+  -- dejarlo suelto en la caja haría que el cierre descontara algo que ya no
+  -- existe.
+  if v_mov is not null then
+    delete from "CashMovement" where id = v_mov;
+  end if;
+
+  delete from "Expense" where id = p_id;
+end;
+$$;
+
+-- ---------------------------------------------------------------------
 -- Backfill: los productos que ya existían no tienen historial.
 -- Se les crea un movimiento inicial para que el stock cuadre con su
 -- último movimiento desde el primer día.
